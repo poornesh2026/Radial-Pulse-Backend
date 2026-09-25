@@ -4,8 +4,10 @@
 freshness and error/retry state. Connectors (other teams) WRITE these; dashboards
 and report builders READ them.
 
-``ReportArtifact`` — one version of a report/generated output: provenance, owner,
-storage reference (an Asset), approval and publication state.
+``ReportArtifact`` — one version of a generated OUTPUT FILE (an exported PDF of an assessment,
+a website brief, a generated video…): provenance, owner, storage reference (an Asset),
+approval and publication state. It is NOT the product report: audit results are always an
+``Assessment`` (app/models/assessment.py). Never create report types per channel.
 """
 
 from __future__ import annotations
@@ -47,7 +49,7 @@ class ReportArtifact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (UniqueConstraint("clinic_id", "report_key", "version"),)
 
     clinic_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clinics.id", ondelete="CASCADE"), index=True)
-    #: Team-defined type, e.g. "seo_audit", "monthly_progress", "website_brief".
+    #: Team-defined output type, e.g. "assessment_export", "website_brief", "video". NOT per-channel audits.
     report_type: Mapped[str] = mapped_column(String(64))
     #: Logical report identity across versions, e.g. "seo_audit:2026-09".
     report_key: Mapped[str] = mapped_column(String(128))
@@ -56,6 +58,8 @@ class ReportArtifact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: {"producer": "seo-team/audit-agent@1.3", "inputs": {"snapshot_ids": [...]}, ...}
     provenance: Mapped[dict[str, Any]] = mapped_column(default=dict)
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    #: Set when this file is an export of a Digital Presence Assessment.
+    assessment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("assessments.id", ondelete="SET NULL"))
     #: Storage reference: the rendered file (PDF/HTML/JSON) as an Asset.
     asset_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("assets.id", ondelete="SET NULL"))
     approval_state: Mapped[ApprovalState] = mapped_column(

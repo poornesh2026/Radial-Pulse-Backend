@@ -32,17 +32,19 @@ from app.core.config import Settings
 from app.core.security import CognitoTokenVerifier
 from app.db.base import Base
 from app.db.session import get_engine
-from app.dependencies.adapters import get_storage, settings_dependency
+from app.dependencies.adapters import get_job_queue, get_storage, settings_dependency
 from app.dependencies.auth import get_token_verifier, get_userinfo_client
 from app.dependencies.db import get_db
 from app.integrations.cognito import UserInfo
 from app.integrations.storage import ObjectInfo
+from app.jobs.queue import InMemoryJobQueue
 from app.main import create_app
 
 API_ROOT = Path(__file__).resolve().parents[1]
 ISSUER = "https://cognito-idp.ap-south-1.amazonaws.com/ap-south-1_TEST"
 WEB_CLIENT_ID = "test-web-client"
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+APP_TEST_USER = "radial_app_test"
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -146,48 +148,79 @@ def _sqlite_engine() -> Engine:
 
 
 @pytest.fixture(scope="session")
-def postgres_engine() -> Iterator[Engine | None]:
+def postgres_engines() -> Iterator[tuple[Engine, Engine] | None]:
+    """(owner_engine, app_engine) on PostgreSQL, or None on the SQLite fast path.
+
+    The owner builds the schema with the REAL migrations (like production). The API under
+    test connects as a NON-owner member of `radial_app`, so row-level security is enforced
+    exactly as in AWS.
+    """
     if not TEST_DATABASE_URL:
         yield None
         return
     from alembic import command
     from alembic.config import Config
+    from sqlalchemy.engine import make_url
 
-    engine = create_engine(TEST_DATABASE_URL, future=True)
-    with engine.begin() as conn:
+    owner = create_engine(TEST_DATABASE_URL, future=True)
+    with owner.begin() as conn:
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
     cfg = Config(str(API_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(API_ROOT / "alembic"))
-    with engine.begin() as conn:
+    with owner.begin() as conn:
         cfg.attributes["connection"] = conn
         command.upgrade(cfg, "head")  # the real migrations build the test schema
-    yield engine
-    engine.dispose()
+    with owner.begin() as conn:
+        conn.execute(
+            text(
+                f"""
+                DO $$ BEGIN
+                  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{APP_TEST_USER}') THEN
+                    CREATE ROLE {APP_TEST_USER} LOGIN PASSWORD '{APP_TEST_USER}' IN ROLE radial_app;
+                  END IF;
+                END $$;
+                """
+            )
+        )
+    app_url = make_url(TEST_DATABASE_URL).set(username=APP_TEST_USER, password=APP_TEST_USER)
+    app = create_engine(app_url, future=True)
+    yield owner, app
+    app.dispose()
+    owner.dispose()
 
 
 @pytest.fixture
-def engine(postgres_engine: Engine | None) -> Iterator[Engine]:
-    if postgres_engine is None:
+def engines(postgres_engines: tuple[Engine, Engine] | None) -> Iterator[tuple[Engine, Engine]]:
+    """(owner_engine, app_engine). On SQLite both are the same fresh in-memory database."""
+    if postgres_engines is None:
         eng = _sqlite_engine()
-        yield eng
+        yield eng, eng
         eng.dispose()
         return
-    yield postgres_engine
+    owner, app = postgres_engines
+    yield owner, app
     tables = ", ".join(t.name for t in reversed(Base.metadata.sorted_tables))
-    with postgres_engine.begin() as conn:
+    with owner.begin() as conn:
         conn.execute(text(f"TRUNCATE {tables} CASCADE"))
 
 
 @pytest.fixture
+def engine(engines: tuple[Engine, Engine]) -> Engine:
+    """The APPLICATION engine (non-owner on PostgreSQL → row-level security applies)."""
+    return engines[1]
+
+
+@pytest.fixture
 def session_factory(engine: Engine) -> sessionmaker[Session]:
+    """Sessions as the application sees them (used by the API under test and the worker)."""
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
 @pytest.fixture
-def db(session_factory: sessionmaker[Session]) -> Iterator[Session]:
-    """A session for arranging test data and asserting on results."""
-    session = session_factory()
+def db(engines: tuple[Engine, Engine]) -> Iterator[Session]:
+    """An OWNER session for arranging test data and asserting on results (bypasses RLS)."""
+    session = sessionmaker(bind=engines[0], autoflush=False, expire_on_commit=False)()
     yield session
     session.close()
 
@@ -205,12 +238,18 @@ def settings() -> Settings:
         s3_assets_bucket="test-bucket",
         max_upload_bytes=10 * 1024 * 1024,
         cors_allowed_origins=["http://localhost:5173"],
+        job_queue_backend="memory",
     )
 
 
 @pytest.fixture
 def storage() -> InMemoryStorage:
     return InMemoryStorage()
+
+
+@pytest.fixture
+def job_queue() -> InMemoryJobQueue:
+    return InMemoryJobQueue()
 
 
 @pytest.fixture
@@ -226,6 +265,7 @@ def client(
     verifier: CognitoTokenVerifier,
     storage: InMemoryStorage,
     userinfo: FakeUserInfo,
+    job_queue: InMemoryJobQueue,
 ) -> Iterator[TestClient]:
     application = create_app(settings)
 
@@ -243,6 +283,7 @@ def client(
             get_token_verifier: lambda: verifier,
             get_userinfo_client: lambda: userinfo,
             get_storage: lambda: storage,
+            get_job_queue: lambda: job_queue,
             settings_dependency: lambda: settings,
         }
     )

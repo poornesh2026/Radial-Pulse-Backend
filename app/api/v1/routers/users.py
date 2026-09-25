@@ -31,5 +31,8 @@ def create_user(
     principal: Principal = Depends(platform_permission(Permission.USERS_MANAGE)),
     db: Session = Depends(get_db),
 ) -> UserRead:
-    """Pre-provision an internal user. They can then sign in with Google using this email."""
+    """Pre-provision a Radial Pulse staff user (Platform Administrator or Digital Success Manager).
+
+    They can then sign in with Google using this email.
+    """
     return UserRead.model_validate(service.create_user(db, principal, body))

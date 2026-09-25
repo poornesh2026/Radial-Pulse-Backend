@@ -19,11 +19,12 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.enums import ApprovalAction, ApprovalState, PublicationState
+from app.core.enums import ApprovalAction, ApprovalState, AssessmentStatus, PublicationState
 from app.core.errors import DomainValidationError, ForbiddenError, InvalidStateError, NotFoundError
 from app.core.rbac import ClinicContext, Permission
 from app.db.base import utcnow
-from app.models import Approval, Notification
+from app.models import Approval, Assessment, Notification
+from app.repositories.assessments import AssessmentRepository
 from app.repositories.assets import AssetRepository
 from app.repositories.governance import ApprovalRepository, AuditEventRepository
 from app.repositories.reporting import ReportRepository
@@ -50,7 +51,7 @@ REQUIRED_PERMISSION: dict[ApprovalAction, Permission] = {
     ApprovalAction.APPROVE: Permission.APPROVALS_DECIDE,
     ApprovalAction.REJECT: Permission.APPROVALS_DECIDE,
     ApprovalAction.REDO: Permission.APPROVALS_DECIDE,
-    ApprovalAction.PUBLISH: Permission.REPORTS_PUBLISH,
+    ApprovalAction.PUBLISH: Permission.APPROVALS_PUBLISH,
     ApprovalAction.HANDOFF: Permission.APPROVALS_SUBMIT,
 }
 
@@ -62,6 +63,8 @@ class ResourceHandler:
     exists: Callable[[Session, UUID, UUID], bool]
     #: Mirror approval state onto the resource row.
     sync: Callable[[Session, UUID, UUID, Approval], None]
+    #: Optional: raise InvalidStateError if the resource is not ready to be submitted.
+    before_submit: Callable[[Session, UUID, UUID], None] | None = None
 
 
 def _report_exists(session: Session, clinic_id: UUID, resource_id: UUID) -> bool:
@@ -88,7 +91,39 @@ def _asset_sync(session: Session, clinic_id: UUID, resource_id: UUID, approval: 
         asset.approval_state = approval.state
 
 
+def _get_assessment(session: Session, clinic_id: UUID, resource_id: UUID) -> Assessment | None:
+    return AssessmentRepository(session).get_in_clinic(clinic_id, resource_id)
+
+
+def _assessment_exists(session: Session, clinic_id: UUID, resource_id: UUID) -> bool:
+    return _get_assessment(session, clinic_id, resource_id) is not None
+
+
+def _assessment_ready(session: Session, clinic_id: UUID, resource_id: UUID) -> None:
+    assessment = _get_assessment(session, clinic_id, resource_id)
+    if assessment is not None and assessment.status not in (
+        AssessmentStatus.COMPLETED,
+        AssessmentStatus.PARTIAL,
+    ):
+        raise InvalidStateError("Only a finished assessment can be submitted for review")
+
+
+def _assessment_sync(session: Session, clinic_id: UUID, resource_id: UUID, approval: Approval) -> None:
+    assessment = _get_assessment(session, clinic_id, resource_id)
+    if assessment is None:
+        return
+    assessment.approval_state = approval.state
+    if approval.publication_state is PublicationState.PUBLISHED and assessment.published_at is None:
+        assessment.published_at = utcnow()
+    assessment.publication_state = approval.publication_state
+
+
 RESOURCE_HANDLERS: dict[str, ResourceHandler] = {
+    # The ONE user-facing Digital Presence Assessment.
+    "assessment": ResourceHandler(
+        exists=_assessment_exists, sync=_assessment_sync, before_submit=_assessment_ready
+    ),
+    # Other outputs (exports, briefs, media) and uploaded assets.
     "report_artifact": ResourceHandler(exists=_report_exists, sync=_report_sync),
     "asset": ResourceHandler(exists=_asset_exists, sync=_asset_sync),
 }
@@ -105,6 +140,8 @@ def apply_action(session: Session, ctx: ClinicContext, data: ApprovalActionReque
         raise ForbiddenError(f"You cannot '{data.action.value}' here")
     if not handler.exists(session, ctx.clinic_id, data.resource_id):
         raise NotFoundError("Resource not found in this clinic")
+    if data.action is ApprovalAction.SUBMIT and handler.before_submit is not None:
+        handler.before_submit(session, ctx.clinic_id, data.resource_id)
 
     repo = ApprovalRepository(session)
     approval = repo.get_for_resource(ctx.clinic_id, data.resource_type, data.resource_id)

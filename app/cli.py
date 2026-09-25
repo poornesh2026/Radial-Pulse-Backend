@@ -2,7 +2,7 @@
 
     uv run python -m app.cli create-platform-admin --email you@company.com --name "Your Name"
 
-Invite-only sign-in means the FIRST platform admin must be created from the command
+Invite-only sign-in means the FIRST Platform Administrator must be created from the command
 line (after that, admins invite everyone else through the API). In AWS, run it as a
 one-off ECS task with the same image, like migrations.
 """
@@ -27,10 +27,10 @@ def create_platform_admin(email: str, name: str | None) -> str:
         repo = UserRepository(session)
         existing = repo.get_by_email(email)
         if existing is not None:
-            if existing.platform_role is not PlatformRole.PLATFORM_ADMIN:
+            if existing.platform_role is not PlatformRole.PLATFORM_ADMINISTRATOR:
                 raise SystemExit(f"{email} exists with role {existing.platform_role.value}; not changing it.")
-            return f"{email} is already a platform admin."
-        user = User(email=email, full_name=name, platform_role=PlatformRole.PLATFORM_ADMIN)
+            return f"{email} is already a Platform Administrator."
+        user = User(email=email, full_name=name, platform_role=PlatformRole.PLATFORM_ADMINISTRATOR)
         repo.add(user)
         audit.record(
             session,
@@ -39,10 +39,10 @@ def create_platform_admin(email: str, name: str | None) -> str:
             resource_type="user",
             resource_id=user.id,
             clinic_id=None,
-            details={"platform_role": "platform_admin", "via": "cli"},
+            details={"platform_role": "platform_administrator", "via": "cli"},
         )
         session.commit()
-        return f"Created platform admin {email}. They can now sign in with Google."
+        return f"Created Platform Administrator {email}. They can now sign in with Google."
     finally:
         session.close()
 
@@ -50,7 +50,7 @@ def create_platform_admin(email: str, name: str | None) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
-    admin = sub.add_parser("create-platform-admin", help="Create the first platform admin")
+    admin = sub.add_parser("create-platform-admin", help="Create the first Platform Administrator")
     admin.add_argument("--email", required=True)
     admin.add_argument("--name", default=None)
     args = parser.parse_args(argv)

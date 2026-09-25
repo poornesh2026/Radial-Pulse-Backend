@@ -14,6 +14,7 @@ from app.core.errors import ServiceUnavailableError, UnauthorizedError
 from app.core.logging import user_id_ctx
 from app.core.rbac import Principal
 from app.core.security import CognitoTokenVerifier, JwksSigningKeyResolver, TokenVerificationError
+from app.db.tenant import set_tenant_scope
 from app.dependencies.db import get_db
 from app.integrations.cognito import CognitoUserInfoClient, UserInfoClient
 from app.services import identity
@@ -58,4 +59,7 @@ def get_principal(
         raise UnauthorizedError("Invalid or expired token") from exc
     principal = identity.resolve_principal(db, token, credentials.credentials, userinfo)
     user_id_ctx.set(str(principal.user_id))
+    # Database row-level security: this request may only see the caller's clinics.
+    # (clinic_access() narrows it further to the ONE clinic in the URL.)
+    set_tenant_scope(db, principal.accessible_clinic_ids())
     return principal

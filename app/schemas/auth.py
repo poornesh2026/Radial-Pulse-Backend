@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from app.core.enums import AssignmentRole, ClinicRole, PlatformRole
+from app.core.enums import ClinicRole, PlatformRole
 from app.core.rbac import Permission
 from app.schemas.common import ApiModel
 
 
 class ClinicAccess(ApiModel):
     clinic_id: UUID
+    #: Set for clinic users (e.g. clinic_administrator).
     clinic_role: ClinicRole | None = None
-    assignment_roles: list[AssignmentRole] = []
+    #: True when the caller is a Digital Success Manager assigned to this clinic.
+    assigned: bool = False
     permissions: list[Permission]
 
 
@@ -23,6 +25,6 @@ class MeResponse(ApiModel):
     platform_role: PlatformRole
     #: Platform-level permissions (e.g. clinics:create).
     permissions: list[Permission]
-    #: Per-clinic access. Empty for platform admins (they can access every clinic).
+    #: Per-clinic access. Empty for Platform Administrators (they can access every clinic).
     clinics: list[ClinicAccess]
     all_clinics: bool

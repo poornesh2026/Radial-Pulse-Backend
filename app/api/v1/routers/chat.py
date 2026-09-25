@@ -2,9 +2,14 @@
 
 OWNER: Person 1 (API) + Person 2 (web/mobile UI).
 
-Reserved boundary — no endpoints yet. Open questions before building: realtime transport
-(WebSocket via API Gateway vs polling), message retention, attachments via the assets
-flow, and whether messages count as health information (see docs/security/README.md).
+Reserved boundary — DEFERRED (not in the current workflow). Agreed design when it is built
+(docs/architecture/review-2026-09.md, change 13):
+* PostgreSQL is the source of truth: conversations, participants, messages (clinic-scoped,
+  under row-level security like every other clinic table).
+* Attachments go through the existing assets flow (presigned S3 upload).
+* Live delivery (WebSocket via API Gateway) is optional and only DELIVERS — history is never
+  kept in the WebSocket layer. Start with polling.
+* Decide first whether messages may contain health information (docs/security/README.md).
 """
 
 from __future__ import annotations

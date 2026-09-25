@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import Field, HttpUrl
 
-from app.core.enums import AssignmentRole, ClinicRole
+from app.core.enums import ClinicRole
 from app.schemas.common import ApiModel, Email, ShortText
 
 
@@ -79,11 +79,14 @@ class DoctorRead(ApiModel):
 
 
 class TeamMemberCreate(ApiModel):
-    """Add a clinic-side person (owner/admin/doctor/staff). Creates the user if the email is new."""
+    """Add a clinic-side person. Creates the (clinic_user) account if the email is new.
+
+    Only `clinic_administrator` can be granted today; `clinic_team_member` is reserved.
+    """
 
     email: Email
     full_name: str | None = Field(default=None, max_length=200)
-    role: ClinicRole
+    role: ClinicRole = ClinicRole.CLINIC_ADMINISTRATOR
 
 
 class TeamMemberRead(ApiModel):
@@ -97,14 +100,14 @@ class TeamMemberRead(ApiModel):
 
 
 class AssignmentCreate(ApiModel):
+    """Assign a Digital Success Manager to this clinic."""
+
     user_id: UUID
-    role: AssignmentRole
 
 
 class AssignmentRead(ApiModel):
     id: UUID
     clinic_id: UUID
     user_id: UUID
-    role: AssignmentRole
     is_active: bool
     created_at: datetime

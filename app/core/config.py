@@ -3,8 +3,10 @@
 All configuration comes from environment variables (12-factor). Nothing
 environment-specific is hard-coded. In AWS, the ECS task definition injects:
 
-* plain values (APP_ENV, COGNITO_*, S3_ASSETS_BUCKET, ...) as environment variables
-* DB_PASSWORD from Secrets Manager (the Aurora-managed master secret)
+* plain values (APP_ENV, COGNITO_*, S3_ASSETS_BUCKET, JOB_QUEUE_URL, ...) as environment variables
+* API and worker: DB_USER=radial_api_iam / radial_worker_iam with DB_IAM_AUTH=true —
+  no database password at all (short-lived IAM tokens, see app/db/session.py)
+* the one-off MIGRATE task only: DB_USER/DB_PASSWORD from the Aurora-managed master secret
 
 Locally, values come from ``services/api/.env`` (git-ignored; copy ``.env.example``).
 """
@@ -35,7 +37,12 @@ class Settings(BaseSettings):
 
     # ---- database -------------------------------------------------------------
     #: Full URL wins if set (local/test). Otherwise built from DB_* parts (AWS).
+    #: This is the APPLICATION login (member of the non-owner `radial_app` role, subject to RLS).
     database_url: SecretStr | None = None
+    #: Owner login used ONLY by Alembic (local dev). Falls back to database_url / DB_* parts.
+    migration_database_url: SecretStr | None = None
+    #: Use AWS IAM database authentication (Aurora) instead of a password.
+    db_iam_auth: bool = False
     db_host: str | None = None
     db_port: int = 5432
     db_name: str = "radial_pulse"
@@ -68,6 +75,16 @@ class Settings(BaseSettings):
     s3_presign_ttl_seconds: int = 300
     max_upload_bytes: int = 200 * 1024 * 1024  # 200 MB
 
+    # ---- background jobs ------------------------------------------------------
+    #: "sqs" in AWS; "database" locally (the worker polls background_jobs); "memory" in tests.
+    job_queue_backend: Literal["sqs", "database", "memory"] = "database"
+    job_queue_url: str | None = None
+    #: SQS long-poll wait and how long a received message stays invisible while we work on it.
+    job_queue_wait_seconds: int = 20
+    job_visibility_timeout_seconds: int = 900
+    #: Version label of the assessment METHODOLOGY (component set + scoring). Product-owned.
+    assessment_methodology_version: str = "2026.09-v0"
+
     # --------------------------------------------------------------- validators
     @field_validator("cors_allowed_origins", "cognito_app_client_ids", mode="before")
     @classmethod
@@ -89,6 +106,8 @@ class Settings(BaseSettings):
                 raise ValueError("Prod database connections must use TLS (DB_SSLMODE=require|verify-full)")
         if self.app_env in ("dev", "prod") and not self.auth_configured:
             raise ValueError("COGNITO_REGION, COGNITO_USER_POOL_ID and COGNITO_APP_CLIENT_IDS are required")
+        if self.job_queue_backend == "sqs" and not self.job_queue_url:
+            raise ValueError("JOB_QUEUE_URL is required when JOB_QUEUE_BACKEND=sqs")
         return self
 
     # ------------------------------------------------------------ derived values
@@ -118,17 +137,28 @@ class Settings(BaseSettings):
         """Database URL. Never log this — it contains the password."""
         if self.database_url is not None:
             return make_url(self.database_url.get_secret_value())
-        if not (self.db_host and self.db_user and self.db_password):
-            raise RuntimeError("Database is not configured: set DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD")
+        if not (self.db_host and self.db_user and (self.db_password or self.db_iam_auth)):
+            raise RuntimeError(
+                "Database is not configured: set DATABASE_URL, or DB_HOST + DB_USER + "
+                "DB_PASSWORD (or DB_IAM_AUTH=true)"
+            )
         return URL.create(
             drivername="postgresql+psycopg",
             username=self.db_user,
-            password=self.db_password.get_secret_value(),
+            # With IAM auth the password is a short-lived token injected per connection.
+            password=self.db_password.get_secret_value() if self.db_password else None,
             host=self.db_host,
             port=self.db_port,
             database=self.db_name,
             query={"sslmode": self.db_sslmode},
         )
+
+    @property
+    def sqlalchemy_migration_url(self) -> URL:
+        """Owner connection for Alembic. Never used by the running API."""
+        if self.migration_database_url is not None:
+            return make_url(self.migration_database_url.get_secret_value())
+        return self.sqlalchemy_url
 
 
 @lru_cache

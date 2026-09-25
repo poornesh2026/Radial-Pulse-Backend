@@ -6,20 +6,19 @@ from fastapi import APIRouter
 
 from app.api.v1.routers import (
     approvals,
+    assessments,
     assets,
     assignments,
     audit_log,
-    audits,
     auth,
     chat,
     clinics,
-    digital_presence,
     doctors,
     notifications,
+    presence,
     profiles,
     reports,
     snapshots,
-    social_media,
     users,
     work_items,
 )
@@ -32,6 +31,8 @@ for module in (
     doctors,
     assignments,
     profiles,
+    presence,
+    assessments,
     assets,
     approvals,
     audit_log,
@@ -39,9 +40,6 @@ for module in (
     notifications,
     snapshots,
     reports,
-    audits,
-    digital_presence,
-    social_media,
     chat,
 ):
     api_router.include_router(module.router)

@@ -6,7 +6,6 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from app.core.enums import AssignmentRole
 from app.models import Clinic, ClinicAssignment, ClinicMembership, Doctor, Organization, User
 from app.repositories.base import Repository
 
@@ -24,7 +23,7 @@ class ClinicRepository(Repository):
     def list_accessible(
         self, clinic_ids: Iterable[UUID] | None, limit: int, offset: int
     ) -> tuple[list[Any], int]:
-        """``clinic_ids=None`` means all clinics (platform admin). An empty set returns nothing."""
+        """``clinic_ids=None`` means all clinics (Platform Administrator). An empty set returns nothing."""
         stmt = select(Clinic).order_by(Clinic.name, Clinic.id)
         if clinic_ids is not None:
             ids = list(clinic_ids)
@@ -94,11 +93,9 @@ class AssignmentRepository(Repository):
             )
         )
 
-    def find(self, clinic_id: UUID, user_id: UUID, role: AssignmentRole) -> ClinicAssignment | None:
+    def find(self, clinic_id: UUID, user_id: UUID) -> ClinicAssignment | None:
         return self.session.scalar(
             select(ClinicAssignment).where(
-                ClinicAssignment.clinic_id == clinic_id,
-                ClinicAssignment.user_id == user_id,
-                ClinicAssignment.role == role,
+                ClinicAssignment.clinic_id == clinic_id, ClinicAssignment.user_id == user_id
             )
         )

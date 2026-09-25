@@ -10,11 +10,9 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.enums import AssignmentRole
 from app.core.errors import NotProvisionedError, UnauthorizedError
 from app.core.rbac import Principal
 from app.core.security import VerifiedToken
@@ -34,15 +32,12 @@ LAST_LOGIN_RESOLUTION = timedelta(minutes=15)
 def build_principal(session: Session, user: User) -> Principal:
     memberships = MembershipRepository(session).active_for_user(user.id)
     assignments = AssignmentRepository(session).active_for_user(user.id)
-    by_clinic: dict[UUID, set[AssignmentRole]] = {}
-    for a in assignments:
-        by_clinic.setdefault(a.clinic_id, set()).add(a.role)
     return Principal(
         user_id=user.id,
         email=user.email,
         platform_role=user.platform_role,
         clinic_roles={m.clinic_id: m.role for m in memberships},
-        assignments={cid: frozenset(roles) for cid, roles in by_clinic.items()},
+        assigned_clinic_ids=frozenset(a.clinic_id for a in assignments),
     )
 
 
@@ -100,7 +95,7 @@ def me(session: Session, principal: Principal) -> MeResponse:
         ClinicAccess(
             clinic_id=cid,
             clinic_role=principal.clinic_roles.get(cid),
-            assignment_roles=sorted(principal.assignments.get(cid, frozenset())),
+            assigned=cid in principal.assigned_clinic_ids,
             permissions=sorted(principal.clinic_permissions(cid)),
         )
         for cid in sorted(clinic_ids, key=str)
@@ -112,7 +107,7 @@ def me(session: Session, principal: Principal) -> MeResponse:
         platform_role=user.platform_role,
         permissions=sorted(principal.global_permissions()),
         clinics=clinics,
-        all_clinics=principal.is_platform_admin,
+        all_clinics=principal.is_platform_administrator,
     )
 
 

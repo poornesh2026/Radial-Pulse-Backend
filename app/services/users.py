@@ -20,8 +20,11 @@ def list_users(session: Session, limit: int, offset: int) -> tuple[list[Any], in
 
 
 def create_user(session: Session, principal: Principal, data: UserCreate) -> User:
-    """Pre-provision a platform/internal user. Client users are added through a clinic's team."""
-    if data.platform_role is PlatformRole.CLIENT:
+    """Pre-provision a Platform Administrator or Digital Success Manager.
+
+    Clinic users are added through a clinic's team (POST /clinics/{clinic_id}/team).
+    """
+    if data.platform_role is PlatformRole.CLINIC_USER:
         raise DomainValidationError("Add clinic users through POST /clinics/{clinic_id}/team")
     repo = UserRepository(session)
     if repo.get_by_email(data.email) is not None:

@@ -6,7 +6,7 @@ from app.models import AuditEvent
 
 def test_profile_read_update_and_version_conflict(client, db, world, auth) -> None:  # type: ignore[no-untyped-def]
     path = f"/api/v1/clinics/{world.clinic_a.id}/profile"
-    h = auth(world.owner_a)
+    h = auth(world.clinic_admin_a)
     profile = client.get(path, headers=h).json()
     assert profile["version"] == 1
     assert profile["team"]  # roles are part of the client context
@@ -29,14 +29,14 @@ def test_profile_read_update_and_version_conflict(client, db, world, auth) -> No
 def test_profile_rejects_bad_values(client, world, auth) -> None:  # type: ignore[no-untyped-def]
     path = f"/api/v1/clinics/{world.clinic_a.id}/profile"
     bad = {"version": 1, "brand": {"primary_color": "red"}}
-    assert client.put(path, headers=auth(world.owner_a), json=bad).status_code == 422
+    assert client.put(path, headers=auth(world.clinic_admin_a), json=bad).status_code == 422
     unknown = {"version": 1, "brand": {"favourite_food": "dosa"}}
-    assert client.put(path, headers=auth(world.owner_a), json=unknown).status_code == 422
+    assert client.put(path, headers=auth(world.clinic_admin_a), json=unknown).status_code == 422
 
 
 def test_asset_upload_flow(client, db, world, auth, storage) -> None:  # type: ignore[no-untyped-def]
     base = f"/api/v1/clinics/{world.clinic_a.id}/assets"
-    h = auth(world.staff_a)
+    h = auth(world.clinic_admin_a)
     r = client.post(
         f"{base}/uploads",
         headers=h,
@@ -73,7 +73,7 @@ def test_asset_upload_flow(client, db, world, auth, storage) -> None:  # type: i
 
 def test_asset_size_mismatch_fails_and_deletes_object(client, world, auth, storage) -> None:  # type: ignore[no-untyped-def]
     base = f"/api/v1/clinics/{world.clinic_a.id}/assets"
-    h = auth(world.owner_a)
+    h = auth(world.clinic_admin_a)
     asset = client.post(
         f"{base}/uploads", headers=h, json={"kind": "logo", "mime_type": "image/png", "size_bytes": 100}
     ).json()["asset"]
@@ -85,7 +85,7 @@ def test_asset_size_mismatch_fails_and_deletes_object(client, world, auth, stora
 
 def test_asset_type_and_size_limits(client, world, auth) -> None:  # type: ignore[no-untyped-def]
     base = f"/api/v1/clinics/{world.clinic_a.id}/assets/uploads"
-    h = auth(world.owner_a)
+    h = auth(world.clinic_admin_a)
     exe = {"kind": "clinic_photo", "mime_type": "application/x-msdownload", "size_bytes": 10}
     assert client.post(base, headers=h, json=exe).status_code == 422
     huge = {"kind": "video", "mime_type": "video/mp4", "size_bytes": 10 * 1024 * 1024 + 1}

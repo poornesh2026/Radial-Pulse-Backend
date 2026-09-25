@@ -15,28 +15,30 @@ from enum import StrEnum
 
 
 class PlatformRole(StrEnum):
-    """What a user is inside Radial Pulse itself."""
+    """What a user is inside Radial Pulse itself (see docs/architecture/multi-tenancy.md).
 
-    PLATFORM_ADMIN = "platform_admin"
-    INTERNAL_MANAGER = "internal_manager"
-    INTERNAL_ANALYST = "internal_analyst"
-    CLIENT = "client"
+    * PLATFORM_ADMINISTRATOR  — Central team. Platform-wide administration, every clinic.
+    * DIGITAL_SUCCESS_MANAGER — internal Radial Pulse user; works ONLY on assigned clinics.
+    * CLINIC_USER             — clinic-side person. Has no platform powers; what they can do
+                                comes only from their clinic membership(s).
+    """
+
+    PLATFORM_ADMINISTRATOR = "platform_administrator"
+    DIGITAL_SUCCESS_MANAGER = "digital_success_manager"
+    CLINIC_USER = "clinic_user"
 
 
 class ClinicRole(StrEnum):
-    """What a clinic-side user is inside ONE clinic."""
+    """What a clinic-side user is inside ONE clinic.
 
-    OWNER = "owner"
-    ADMIN = "admin"
-    DOCTOR = "doctor"
-    STAFF = "staff"
+    A doctor is NOT automatically a Clinic Administrator (or a user at all): doctors are
+    records in `doctors`; a login is a separate, optional link.
+    """
 
-
-class AssignmentRole(StrEnum):
-    """What an internal Radial Pulse user does for ONE clinic."""
-
-    ACCOUNT_MANAGER = "account_manager"
-    ANALYST = "analyst"
+    CLINIC_ADMINISTRATOR = "clinic_administrator"
+    #: RESERVED for a future release. Has no permissions and cannot be granted through the
+    #: API yet. Legacy doctor/staff memberships were migrated to it (fail closed).
+    CLINIC_TEAM_MEMBER = "clinic_team_member"
 
 
 class ApprovalAction(StrEnum):
@@ -113,3 +115,73 @@ class AssetStatus(StrEnum):
     UPLOADED = "uploaded"
     FAILED = "failed"
     DELETED = "deleted"
+
+
+class AssessmentStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    PARTIAL = "partial"  # some components failed or were not available
+    FAILED = "failed"
+
+
+class AssessmentComponentKey(StrEnum):
+    """The fixed, user-facing sections of the ONE Digital Presence Assessment.
+
+    Engines (owned by domain teams) contribute to these keys. Adding a key is a product
+    decision, not an engine decision.
+    """
+
+    WEBSITE = "website"
+    GOOGLE_BUSINESS_PROFILE = "google_business_profile"
+    LOCAL_SEARCH = "local_search"
+    SEARCH_READINESS = "search_readiness"  # SEO + AEO + GEO readiness, presented as one section
+    SOCIAL_PRESENCE = "social_presence"
+    COMPETITOR_BENCHMARK = "competitor_benchmark"
+
+
+class ComponentStatus(StrEnum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    NOT_AVAILABLE = "not_available"  # e.g. no GBP listing found, or no engine deployed yet
+
+
+class FindingPriority(StrEnum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INFO = "info"
+
+
+class PresencePlatform(StrEnum):
+    """Where a clinic can be found online. One generic table; add a value to support a new platform."""
+
+    WEBSITE = "website"
+    GOOGLE_BUSINESS_PROFILE = "google_business_profile"
+    INSTAGRAM = "instagram"
+    FACEBOOK = "facebook"
+    YOUTUBE = "youtube"
+    LINKEDIN = "linkedin"
+    X = "x"
+    PRACTO = "practo"
+    JUSTDIAL = "justdial"
+    OTHER = "other"
+
+
+class PresenceVerification(StrEnum):
+    UNVERIFIED = "unverified"  # found by an engine or typed in, not yet checked by a person
+    CONFIRMED = "confirmed"  # a person confirmed it belongs to the clinic
+    REJECTED = "rejected"  # a person said it is NOT the clinic's
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"  # gave up after max attempts (message goes to the DLQ)
+
+
+class JobType(StrEnum):
+    ASSESSMENT_RUN = "assessment.run"

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pytest
 from sqlalchemy.orm import Session
 
-from app.core.enums import AssignmentRole, ClinicRole, PlatformRole
+from app.core.enums import ClinicRole, PlatformRole
 from app.models import Clinic, Doctor, User
 from tests.factories import add_member, assign, make_clinic, make_doctor, make_user
 
@@ -18,13 +18,12 @@ class World:
     clinic_b: Clinic
     doctor_a: Doctor
     doctor_b: Doctor
-    admin: User
-    manager_a: User  # internal, account_manager of A
-    analyst_a: User  # internal, analyst of A
-    unassigned_analyst: User  # internal, no clinics
-    owner_a: User
-    staff_a: User
-    owner_b: User
+    admin: User  # Platform Administrator
+    dsm_a: User  # Digital Success Manager assigned to A
+    unassigned_dsm: User  # Digital Success Manager with no clinics
+    clinic_admin_a: User  # Clinic Administrator of A
+    team_member_a: User  # reserved Clinic Team Member of A (no access yet)
+    clinic_admin_b: User  # Clinic Administrator of B
 
 
 @pytest.fixture
@@ -36,17 +35,15 @@ def world(db: Session) -> World:
         clinic_b=clinic_b,
         doctor_a=make_doctor(db, clinic_a, "Dr. A"),
         doctor_b=make_doctor(db, clinic_b, "Dr. B"),
-        admin=make_user(db, PlatformRole.PLATFORM_ADMIN),
-        manager_a=make_user(db, PlatformRole.INTERNAL_MANAGER),
-        analyst_a=make_user(db, PlatformRole.INTERNAL_ANALYST),
-        unassigned_analyst=make_user(db, PlatformRole.INTERNAL_ANALYST),
-        owner_a=make_user(db, PlatformRole.CLIENT),
-        staff_a=make_user(db, PlatformRole.CLIENT),
-        owner_b=make_user(db, PlatformRole.CLIENT),
+        admin=make_user(db, PlatformRole.PLATFORM_ADMINISTRATOR),
+        dsm_a=make_user(db, PlatformRole.DIGITAL_SUCCESS_MANAGER),
+        unassigned_dsm=make_user(db, PlatformRole.DIGITAL_SUCCESS_MANAGER),
+        clinic_admin_a=make_user(db, PlatformRole.CLINIC_USER),
+        team_member_a=make_user(db, PlatformRole.CLINIC_USER),
+        clinic_admin_b=make_user(db, PlatformRole.CLINIC_USER),
     )
-    assign(db, clinic_a, w.manager_a, AssignmentRole.ACCOUNT_MANAGER)
-    assign(db, clinic_a, w.analyst_a, AssignmentRole.ANALYST)
-    add_member(db, clinic_a, w.owner_a, ClinicRole.OWNER)
-    add_member(db, clinic_a, w.staff_a, ClinicRole.STAFF)
-    add_member(db, clinic_b, w.owner_b, ClinicRole.OWNER)
+    assign(db, clinic_a, w.dsm_a)
+    add_member(db, clinic_a, w.clinic_admin_a, ClinicRole.CLINIC_ADMINISTRATOR)
+    add_member(db, clinic_a, w.team_member_a, ClinicRole.CLINIC_TEAM_MEMBER)
+    add_member(db, clinic_b, w.clinic_admin_b, ClinicRole.CLINIC_ADMINISTRATOR)
     return w

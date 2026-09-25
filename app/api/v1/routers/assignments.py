@@ -15,7 +15,9 @@ from app.services import clinics as service
 router = APIRouter(prefix="/clinics/{clinic_id}/assignments", tags=["assignments"], responses=ERRORS)
 
 
-@router.get("", response_model=list[AssignmentRead], summary="Internal users assigned to this clinic")
+@router.get(
+    "", response_model=list[AssignmentRead], summary="Digital Success Managers assigned to this clinic"
+)
 def list_assignments(
     ctx: ClinicContext = Depends(clinic_access(Permission.CLINICS_READ)), db: Session = Depends(get_db)
 ) -> list[AssignmentRead]:

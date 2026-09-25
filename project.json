@@ -40,6 +40,13 @@
         "cwd": "services/api"
       }
     },
+    "worker": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run python -m app.worker",
+        "cwd": "services/api"
+      }
+    },
     "lint": {
       "executor": "nx:run-commands",
       "inputs": [

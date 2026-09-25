@@ -25,7 +25,8 @@ def _url() -> str:
     )
     if override:
         return override
-    return get_settings().sqlalchemy_url.render_as_string(hide_password=False)
+    # The OWNER login (MIGRATION_DATABASE_URL, or DB_* parts in the AWS migrate task).
+    return get_settings().sqlalchemy_migration_url.render_as_string(hide_password=False)
 
 
 def run_migrations_offline() -> None:

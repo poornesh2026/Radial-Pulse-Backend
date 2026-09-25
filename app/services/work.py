@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.enums import WorkItemStatus
 from app.core.errors import DomainValidationError, NotFoundError
-from app.core.rbac import ClinicContext, Principal
+from app.core.rbac import Actor, ClinicContext, Principal
 from app.db.base import utcnow
 from app.models import Notification, WorkItem
 from app.repositories.governance import ApprovalRepository
@@ -32,7 +32,7 @@ def _check_owner(session: Session, clinic_id: UUID, owner_user_id: UUID | None) 
         raise DomainValidationError("owner_user_id must be an active user with access to this clinic")
 
 
-def _notify_owner(session: Session, item: WorkItem, actor: Principal) -> None:
+def _notify_owner(session: Session, item: WorkItem, actor: Actor) -> None:
     if item.owner_user_id and item.owner_user_id != actor.user_id:
         session.add(
             Notification(

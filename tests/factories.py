@@ -6,7 +6,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.core.enums import AssignmentRole, ClinicRole, PlatformRole
+from app.core.enums import ClinicRole, PlatformRole
 from app.models import (
     Clinic,
     ClinicAssignment,
@@ -49,8 +49,9 @@ def add_member(db: Session, clinic: Clinic, user: User, role: ClinicRole) -> Cli
     return m
 
 
-def assign(db: Session, clinic: Clinic, user: User, role: AssignmentRole) -> ClinicAssignment:
-    a = ClinicAssignment(clinic_id=clinic.id, user_id=user.id, role=role)
+def assign(db: Session, clinic: Clinic, user: User) -> ClinicAssignment:
+    """Assign a Digital Success Manager to a clinic."""
+    a = ClinicAssignment(clinic_id=clinic.id, user_id=user.id)
     db.add(a)
     db.commit()
     return a

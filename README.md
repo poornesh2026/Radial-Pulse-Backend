@@ -21,6 +21,10 @@ schemas     core (config, security, rbac, errors, logging)
 | `dependencies`  | DB session, auth (`get_principal`), tenancy (`clinic_access`)         |                                   |
 | `core`          | settings, JWT verification, RBAC, error types, logging                |                                   |
 | `integrations`  | S3, Cognito userInfo (behind small Protocols)                         |                                   |
+| `assessments`   | Engine contract (`engines.py`) + placeholder scoring                  | contain SEO/GBP/social logic      |
+| `jobs`          | Job queue backends (SQS / database poll / in-memory) + message v1     | carry data or tokens in messages  |
+| `worker`        | `python -m app.worker`: receive → claim → run handler → retry/fail    | import FastAPI or routers         |
+| `db/tenant.py`  | Hands the allowed clinic ids to PostgreSQL row-level security         |                                   |
 | `middleware`    | request id + access log, security headers                             |                                   |
 
 ## Tenant isolation — the one rule
@@ -31,6 +35,11 @@ Repositories filter every clinic-scoped query by `clinic_id`, so an id from anot
 clinic returns nothing. `tests/api/test_tenant_isolation.py` proves it for every
 route — **add your new route to that file**.
 
+PostgreSQL **row-level security** is the second net: the API and worker log in as members
+of the non-owner `radial_app` role, and `clinic_access` narrows the transaction to the one
+clinic. **A new table with `clinic_id` needs an RLS policy in its migration** (copy 0004);
+`tests/integration/test_rls.py` fails otherwise.
+
 ## Commands (run from the repo root)
 
 ```bash
@@ -38,12 +47,14 @@ pnpm nx run api:install            # uv sync (creates .venv)
 docker compose up -d postgres      # local PostgreSQL 16
 pnpm nx run api:migrate            # alembic upgrade head
 pnpm nx run api:dev                # http://localhost:8000/docs
+pnpm nx run api:worker             # background worker (JOB_QUEUE_BACKEND=database locally)
+pnpm nx run api:create-admin --email=you@example.com --name="You"   # first Platform Administrator
 pnpm nx run api:test               # fast tests (SQLite)
 pnpm nx run api:integration-test   # full suite on PostgreSQL (needs TEST_DATABASE_URL)
 pnpm nx run api:lint               # ruff
 pnpm nx run api:typecheck          # mypy --strict
 pnpm nx run api:openapi            # writes packages/api-client/openapi/openapi.json
-pnpm nx run api:migration --name="add presence channels"   # new Alembic revision
+pnpm nx run api:migration --name="add consent source"   # new Alembic revision
 ```
 
 ## Migrations
@@ -54,6 +65,9 @@ pnpm nx run api:migration --name="add presence channels"   # new Alembic revisio
 4. `pnpm nx run api:integration-test` — `test_migrations_match_models` fails if models and migrations drift.
 5. Migrations must be backwards-compatible with the previous app version (expand → migrate → contract),
    because the deploy runs migrations before the new containers start.
+6. Migrations run as the database **owner** (`MIGRATION_DATABASE_URL`); the app runs as
+   `radial_app` (`DATABASE_URL`). New clinic tables: add RLS. Changed stored values
+   (roles, statuses): write a data mapping and a downgrade (see 0002).
 
 ## Auth in local development
 

@@ -54,7 +54,7 @@ class AuditEvent(UUIDPrimaryKeyMixin, Base):
     action: Mapped[str] = mapped_column(String(64), index=True)
     resource_type: Mapped[str] = mapped_column(String(64))
     resource_id: Mapped[str | None] = mapped_column(String(64))
-    #: Tenant. Null only for platform-level events (e.g. creating an internal user).
+    #: Tenant. Null only for platform-level events (e.g. creating a staff user).
     clinic_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clinics.id", ondelete="SET NULL"))
     request_id: Mapped[str | None] = mapped_column(String(128))
     #: Small, non-sensitive context. Never tokens, never file contents.

@@ -24,30 +24,32 @@ CLINIC_SCOPED_GETS = [
     "/api/v1/clinics/{cid}/work-items",
     "/api/v1/clinics/{cid}/snapshots",
     "/api/v1/clinics/{cid}/reports",
+    "/api/v1/clinics/{cid}/presence-profiles",
+    "/api/v1/clinics/{cid}/assessments",
 ]
 
 
 @pytest.mark.parametrize("path", CLINIC_SCOPED_GETS)
-def test_owner_of_b_gets_404_for_every_clinic_a_endpoint(client, world, auth, path) -> None:  # type: ignore[no-untyped-def]
-    r = client.get(path.format(cid=world.clinic_a.id), headers=auth(world.owner_b))
+def test_clinic_admin_of_b_gets_404_for_every_clinic_a_endpoint(client, world, auth, path) -> None:  # type: ignore[no-untyped-def]
+    r = client.get(path.format(cid=world.clinic_a.id), headers=auth(world.clinic_admin_b))
     assert r.status_code == 404, r.text
     assert r.json()["type"] == "not_found"
 
 
 @pytest.mark.parametrize("path", CLINIC_SCOPED_GETS)
-def test_unassigned_internal_user_gets_404(client, world, auth, path) -> None:  # type: ignore[no-untyped-def]
-    r = client.get(path.format(cid=world.clinic_a.id), headers=auth(world.unassigned_analyst))
+def test_unassigned_digital_success_manager_gets_404(client, world, auth, path) -> None:  # type: ignore[no-untyped-def]
+    r = client.get(path.format(cid=world.clinic_a.id), headers=auth(world.unassigned_dsm))
     assert r.status_code == 404
 
 
 @pytest.mark.parametrize("path", CLINIC_SCOPED_GETS)
-def test_owner_of_a_can_read_own_clinic(client, world, auth, path) -> None:  # type: ignore[no-untyped-def]
-    r = client.get(path.format(cid=world.clinic_a.id), headers=auth(world.owner_a))
+def test_clinic_admin_of_a_can_read_own_clinic(client, world, auth, path) -> None:  # type: ignore[no-untyped-def]
+    r = client.get(path.format(cid=world.clinic_a.id), headers=auth(world.clinic_admin_a))
     assert r.status_code == 200, (path, r.text)
 
 
 def test_unknown_clinic_id_is_404_not_500(client, world, auth) -> None:  # type: ignore[no-untyped-def]
-    r = client.get(f"/api/v1/clinics/{uuid.uuid4()}", headers=auth(world.owner_a))
+    r = client.get(f"/api/v1/clinics/{uuid.uuid4()}", headers=auth(world.clinic_admin_a))
     assert r.status_code == 404
 
 
@@ -57,10 +59,10 @@ def test_clinic_list_only_contains_accessible_clinics(client, world, auth) -> No
         assert r.status_code == 200
         return {c["name"] for c in r.json()["items"]}
 
-    assert names(world.owner_a) == {"Smile Dental A"}
-    assert names(world.owner_b) == {"Bright Clinic B"}
-    assert names(world.analyst_a) == {"Smile Dental A"}
-    assert names(world.unassigned_analyst) == set()
+    assert names(world.clinic_admin_a) == {"Smile Dental A"}
+    assert names(world.clinic_admin_b) == {"Bright Clinic B"}
+    assert names(world.dsm_a) == {"Smile Dental A"}
+    assert names(world.unassigned_dsm) == set()
     assert names(world.admin) == {"Smile Dental A", "Bright Clinic B"}
 
 
@@ -68,7 +70,7 @@ def test_doctor_of_b_cannot_be_reached_through_clinic_a_path(client, world, auth
     """Owner of A has doctors:write in A. Using A's path with B's doctor id must not touch B."""
     r = client.patch(
         f"/api/v1/clinics/{world.clinic_a.id}/doctors/{world.doctor_b.id}",
-        headers=auth(world.owner_a),
+        headers=auth(world.clinic_admin_a),
         json={"full_name": "Hijacked"},
     )
     assert r.status_code == 404
@@ -76,7 +78,7 @@ def test_doctor_of_b_cannot_be_reached_through_clinic_a_path(client, world, auth
 
 def test_writes_into_other_clinic_are_blocked(client, world, auth) -> None:  # type: ignore[no-untyped-def]
     cid = world.clinic_b.id
-    h = auth(world.owner_a)
+    h = auth(world.clinic_admin_a)
     assert (
         client.post(f"/api/v1/clinics/{cid}/doctors", headers=h, json={"full_name": "X"}).status_code == 404
     )
@@ -103,7 +105,7 @@ def test_ids_from_other_clinic_are_404_for_nested_resources(client, db, world, a
     db.commit()
 
     a = world.clinic_a.id
-    h = auth(world.manager_a)  # full access to A
+    h = auth(world.dsm_a)  # full access to A
     assert client.get(f"/api/v1/clinics/{a}/assets/{asset.id}/download-url", headers=h).status_code == 404
     assert client.post(f"/api/v1/clinics/{a}/assets/{asset.id}/confirm", headers=h).status_code == 404
     assert client.get(f"/api/v1/clinics/{a}/reports/{report.id}", headers=h).status_code == 404
@@ -126,14 +128,29 @@ def test_snapshots_are_tenant_scoped(client, db, world, auth) -> None:  # type: 
         )
     )  # fmt: skip
     db.commit()
-    r = client.get(f"/api/v1/clinics/{world.clinic_a.id}/snapshots", headers=auth(world.manager_a))
+    r = client.get(f"/api/v1/clinics/{world.clinic_a.id}/snapshots", headers=auth(world.dsm_a))
     assert r.status_code == 200
     assert r.json()["total"] == 0
 
 
+@pytest.mark.parametrize("path", CLINIC_SCOPED_GETS)
+def test_reserved_team_member_role_has_no_access_yet(client, world, auth, path) -> None:  # type: ignore[no-untyped-def]
+    r = client.get(path.format(cid=world.clinic_a.id), headers=auth(world.team_member_a))
+    assert r.status_code == 404
+
+
 def test_permission_denied_inside_own_clinic_is_403(client, world, auth) -> None:  # type: ignore[no-untyped-def]
-    """Staff can see clinic A but may not edit its profile or read its audit log."""
-    h = auth(world.staff_a)
+    """A Clinic Administrator can see clinic A but cannot do Radial Pulse staff work in it."""
+    h = auth(world.clinic_admin_a)
     a = world.clinic_a.id
-    assert client.put(f"/api/v1/clinics/{a}/profile", headers=h, json={"version": 1}).status_code == 403
-    assert client.get(f"/api/v1/clinics/{a}/audit-events", headers=h).status_code == 403
+    assert client.post(f"/api/v1/clinics/{a}/assessments", headers=h, json={}).status_code == 403
+    assert (
+        client.post(f"/api/v1/clinics/{a}/team", headers=h, json={"email": "x@example.test"}).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            f"/api/v1/clinics/{a}/work-items", headers=h, json={"kind": "k", "title": "t"}
+        ).status_code
+        == 403
+    )

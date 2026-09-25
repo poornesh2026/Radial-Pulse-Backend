@@ -1,16 +1,18 @@
-"""Clinics, doctors, clinic team (memberships) and internal-user assignments."""
+"""Clinics, doctors, clinic team (memberships) and Digital Success Manager assignments."""
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.enums import AssignmentRole, ClinicRole, PlatformRole
+from app.core.enums import PlatformRole
 from app.core.errors import ConflictError, DomainValidationError, ForbiddenError, NotFoundError
-from app.core.rbac import INTERNAL_ROLES, ClinicContext, Permission, Principal
+from app.core.rbac import GRANTABLE_CLINIC_ROLES, ClinicContext, Permission, Principal
+from app.db.tenant import add_clinic_to_scope
 from app.models import (
     Clinic,
     ClinicAssignment,
@@ -53,13 +55,14 @@ def get_clinic(session: Session, ctx: ClinicContext) -> Clinic:
 
 
 def create_clinic(session: Session, principal: Principal, data: ClinicCreate) -> Clinic:
-    """Onboard a clinic. An internal creator is auto-assigned as its account manager."""
+    """Onboard a clinic. A Digital Success Manager who creates it is auto-assigned to it."""
     if data.organization_id is not None:
         org = OrganizationRepository(session).get(data.organization_id)
         # Adding a branch requires access to at least one clinic already in that organization.
         sibling_ids = ClinicRepository(session).ids_in_organization(data.organization_id) if org else []
         if org is None or not (
-            principal.is_platform_admin or any(principal.can_access_clinic(cid) for cid in sibling_ids)
+            principal.is_platform_administrator
+            or any(principal.can_access_clinic(cid) for cid in sibling_ids)
         ):
             raise NotFoundError("Organization not found")
     else:
@@ -67,7 +70,12 @@ def create_clinic(session: Session, principal: Principal, data: ClinicCreate) ->
         session.add(org)
         session.flush()
 
+    # Authorization already passed (clinics:create). Widen the DB tenant scope to the new
+    # clinic BEFORE inserting it, or row-level security would (correctly) refuse the insert.
+    clinic_id = uuid.uuid4()
+    add_clinic_to_scope(session, clinic_id)
     clinic = Clinic(
+        id=clinic_id,
         organization_id=org.id,
         name=data.name,
         address_line=data.address_line,
@@ -83,13 +91,10 @@ def create_clinic(session: Session, principal: Principal, data: ClinicCreate) ->
     session.flush()
     session.add(ClinicProfile(clinic_id=clinic.id, updated_by_user_id=principal.user_id))
 
-    if principal.platform_role in INTERNAL_ROLES:
+    if principal.platform_role is PlatformRole.DIGITAL_SUCCESS_MANAGER:
         session.add(
             ClinicAssignment(
-                clinic_id=clinic.id,
-                user_id=principal.user_id,
-                role=AssignmentRole.ACCOUNT_MANAGER,
-                assigned_by_user_id=principal.user_id,
+                clinic_id=clinic.id, user_id=principal.user_id, assigned_by_user_id=principal.user_id
             )
         )
 
@@ -186,21 +191,21 @@ def list_team(session: Session, ctx: ClinicContext) -> list[TeamMemberRead]:
 
 
 def add_team_member(session: Session, ctx: ClinicContext, data: TeamMemberCreate) -> TeamMemberRead:
-    """Add a clinic-side user. Creates the (client) user if the email is new."""
-    if data.role is ClinicRole.OWNER and not ctx.principal.is_internal:
-        raise ForbiddenError("Only Radial Pulse staff can add clinic owners")
+    """Add a Clinic Administrator. Creates the (clinic_user) account if the email is new."""
+    if data.role not in GRANTABLE_CLINIC_ROLES:
+        raise DomainValidationError(f"The {data.role.value} role is not available yet")
     users = UserRepository(session)
     user = users.get_by_email(data.email)
     if user is None:
         user = User(
             email=data.email,
             full_name=data.full_name,
-            platform_role=PlatformRole.CLIENT,
+            platform_role=PlatformRole.CLINIC_USER,
             created_by_user_id=ctx.principal.user_id,
         )
         session.add(user)
         session.flush()
-    elif user.platform_role is not PlatformRole.CLIENT:
+    elif user.platform_role is not PlatformRole.CLINIC_USER:
         raise ConflictError("That email belongs to a Radial Pulse staff account")
 
     memberships = MembershipRepository(session)
@@ -247,11 +252,11 @@ def create_assignment(
     target = UserRepository(session).get(data.user_id)
     if target is None or not target.is_active:
         raise NotFoundError("User not found")
-    if target.platform_role not in INTERNAL_ROLES:
-        raise DomainValidationError("Only internal Radial Pulse users can be assigned to clinics")
+    if target.platform_role is not PlatformRole.DIGITAL_SUCCESS_MANAGER:
+        raise DomainValidationError("Only Digital Success Managers can be assigned to clinics")
 
     repo = AssignmentRepository(session)
-    existing = repo.find(clinic_id, target.id, data.role)
+    existing = repo.find(clinic_id, target.id)
     if existing is not None:
         if existing.is_active:
             raise ConflictError("Already assigned")
@@ -259,7 +264,7 @@ def create_assignment(
         assignment = existing
     else:
         assignment = ClinicAssignment(
-            clinic_id=clinic_id, user_id=target.id, role=data.role, assigned_by_user_id=principal.user_id
+            clinic_id=clinic_id, user_id=target.id, assigned_by_user_id=principal.user_id
         )
         session.add(assignment)
     try:
@@ -274,7 +279,7 @@ def create_assignment(
         resource_type="clinic_assignment",
         resource_id=assignment.id,
         clinic_id=clinic_id,
-        details={"user_id": str(target.id), "role": data.role.value},
+        details={"user_id": str(target.id)},
     )
     session.commit()
     return assignment
