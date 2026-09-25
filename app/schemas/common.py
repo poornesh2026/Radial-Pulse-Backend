@@ -12,7 +12,7 @@ T = TypeVar("T")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def _normalize_email(value: str) -> str:
+def normalize_email(value: str) -> str:
     value = value.strip().lower()
     if len(value) > 320 or not _EMAIL.match(value):
         raise ValueError("not a valid email address")
@@ -20,7 +20,7 @@ def _normalize_email(value: str) -> str:
 
 
 #: Lower-cased, trimmed, basic-shape-checked email. (Deliverability is checked by Cognito/Google.)
-Email = Annotated[str, AfterValidator(_normalize_email)]
+Email = Annotated[str, AfterValidator(normalize_email)]
 
 ShortText = Annotated[str, Field(min_length=1, max_length=200)]
 
