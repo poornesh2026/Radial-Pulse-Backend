@@ -1,0 +1,121 @@
+{
+  "name": "api",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "services/api/app",
+  "tags": ["type:service", "scope:api"],
+  "namedInputs": {
+    "python": [
+      "{projectRoot}/app/**/*",
+      "{projectRoot}/tests/**/*",
+      "{projectRoot}/alembic/**/*",
+      "{projectRoot}/alembic.ini",
+      "{projectRoot}/pyproject.toml",
+      "{projectRoot}/uv.lock"
+    ]
+  },
+  "targets": {
+    "install": {
+      "executor": "nx:run-commands",
+      "options": { "command": "uv sync", "cwd": "services/api" },
+      "cache": false
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+        "cwd": "services/api"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": { "command": "uv run uvicorn app.main:app --host 0.0.0.0 --port 8000", "cwd": "services/api" }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "inputs": ["python"],
+      "cache": true,
+      "options": { "command": "uv run ruff check .", "cwd": "services/api" }
+    },
+    "format": {
+      "executor": "nx:run-commands",
+      "options": { "command": "uv run ruff format .", "cwd": "services/api" }
+    },
+    "format-check": {
+      "executor": "nx:run-commands",
+      "inputs": ["python"],
+      "cache": true,
+      "options": { "command": "uv run ruff format --check .", "cwd": "services/api" }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "inputs": ["python"],
+      "cache": true,
+      "options": { "command": "uv run mypy", "cwd": "services/api" }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "inputs": ["python"],
+      "cache": true,
+      "options": { "command": "uv run pytest -m 'not integration'", "cwd": "services/api" }
+    },
+    "integration-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "uv run pytest",
+        "cwd": "services/api"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "inputs": ["python"],
+      "cache": true,
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "uv run python -m compileall -q app",
+          "uv run python -m app.openapi_export dist/openapi.json"
+        ],
+        "parallel": false,
+        "cwd": "services/api"
+      }
+    },
+    "openapi": {
+      "executor": "nx:run-commands",
+      "inputs": ["python"],
+      "outputs": ["{workspaceRoot}/packages/api-client/openapi/openapi.json"],
+      "cache": true,
+      "options": {
+        "command": "uv run python -m app.openapi_export ../../packages/api-client/openapi/openapi.json",
+        "cwd": "services/api"
+      }
+    },
+    "migrate": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": { "command": "uv run alembic upgrade head", "cwd": "services/api" }
+    },
+    "migration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "uv run alembic revision --autogenerate -m \"{args.name}\"",
+        "cwd": "services/api"
+      }
+    },
+    "docker-build": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "docker build -t radial-pulse-api:local -f services/api/Dockerfile services/api",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "audit-deps": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": { "command": "uv run pip-audit", "cwd": "services/api" }
+    }
+  }
+}

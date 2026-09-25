@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+
+from app.api.v1.routers._common import ERRORS, Limit, Offset
+from app.core.enums import ApprovalState
+from app.core.errors import ProblemDetails
+from app.core.rbac import ClinicContext, Permission
+from app.dependencies.db import get_db
+from app.dependencies.tenancy import clinic_access
+from app.schemas.common import Page
+from app.schemas.governance import ApprovalActionRequest, ApprovalRead
+from app.services import governance as service
+
+router = APIRouter(prefix="/clinics/{clinic_id}/approvals", tags=["approvals"], responses=ERRORS)
+
+
+@router.post(
+    "/actions",
+    response_model=ApprovalRead,
+    summary="submit / approve / reject / redo / publish / handoff",
+    responses={409: {"model": ProblemDetails, "description": "Action not allowed in the current state"}},
+)
+def apply_action(
+    body: ApprovalActionRequest,
+    ctx: ClinicContext = Depends(clinic_access(Permission.CLINICS_READ)),
+    db: Session = Depends(get_db),
+) -> ApprovalRead:
+    """The per-action permission (e.g. approvals:decide) is checked by the service."""
+    return ApprovalRead.model_validate(service.apply_action(db, ctx, body))
+
+
+@router.get("", response_model=Page[ApprovalRead])
+def list_approvals(
+    state: ApprovalState | None = Query(default=None),
+    limit: Limit = 50,
+    offset: Offset = 0,
+    ctx: ClinicContext = Depends(clinic_access(Permission.CLINICS_READ)),
+    db: Session = Depends(get_db),
+) -> Page[ApprovalRead]:
+    items, total = service.list_approvals(db, ctx, state, limit, offset)
+    return Page[ApprovalRead](items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/{approval_id}", response_model=ApprovalRead)
+def get_approval(
+    approval_id: UUID,
+    ctx: ClinicContext = Depends(clinic_access(Permission.CLINICS_READ)),
+    db: Session = Depends(get_db),
+) -> ApprovalRead:
+    return ApprovalRead.model_validate(service.get_approval(db, ctx, approval_id))

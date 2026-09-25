@@ -1,0 +1,198 @@
+"""Approvals: one small, explicit state machine shared by every team.
+
+This is NOT a workflow engine. It records who submitted/approved/rejected/asked
+for a redo/published/handed off a resource, keeps the resource's own state in
+sync, and writes an audit event for every action.
+
+Resource types must be REGISTERED below. Registration does two things:
+* proves the resource exists INSIDE the same clinic (no cross-tenant approvals)
+* mirrors the approval/publication state onto the resource row
+Teams add their resource type (e.g. "website_brief", "video_job") with a small handler.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from app.core.enums import ApprovalAction, ApprovalState, PublicationState
+from app.core.errors import DomainValidationError, ForbiddenError, InvalidStateError, NotFoundError
+from app.core.rbac import ClinicContext, Permission
+from app.db.base import utcnow
+from app.models import Approval, Notification
+from app.repositories.assets import AssetRepository
+from app.repositories.governance import ApprovalRepository, AuditEventRepository
+from app.repositories.reporting import ReportRepository
+from app.repositories.users import UserRepository
+from app.schemas.governance import ApprovalActionRequest
+from app.services import audit
+from app.services.identity import build_principal
+
+# ------------------------------------------------------------- state machine
+S = ApprovalState
+
+#: action -> (states it may start from, resulting state or None if state is unchanged)
+TRANSITIONS: dict[ApprovalAction, tuple[frozenset[ApprovalState], ApprovalState | None]] = {
+    ApprovalAction.SUBMIT: (frozenset({S.DRAFT, S.REJECTED, S.REDO_REQUESTED}), S.SUBMITTED),
+    ApprovalAction.APPROVE: (frozenset({S.SUBMITTED}), S.APPROVED),
+    ApprovalAction.REJECT: (frozenset({S.SUBMITTED}), S.REJECTED),
+    ApprovalAction.REDO: (frozenset({S.SUBMITTED, S.APPROVED}), S.REDO_REQUESTED),
+    ApprovalAction.PUBLISH: (frozenset({S.APPROVED}), None),
+    ApprovalAction.HANDOFF: (frozenset(ApprovalState), None),
+}
+
+REQUIRED_PERMISSION: dict[ApprovalAction, Permission] = {
+    ApprovalAction.SUBMIT: Permission.APPROVALS_SUBMIT,
+    ApprovalAction.APPROVE: Permission.APPROVALS_DECIDE,
+    ApprovalAction.REJECT: Permission.APPROVALS_DECIDE,
+    ApprovalAction.REDO: Permission.APPROVALS_DECIDE,
+    ApprovalAction.PUBLISH: Permission.REPORTS_PUBLISH,
+    ApprovalAction.HANDOFF: Permission.APPROVALS_SUBMIT,
+}
+
+
+# ------------------------------------------------------------- resource registry
+@dataclass(frozen=True)
+class ResourceHandler:
+    #: Return True if resource_id exists in clinic_id.
+    exists: Callable[[Session, UUID, UUID], bool]
+    #: Mirror approval state onto the resource row.
+    sync: Callable[[Session, UUID, UUID, Approval], None]
+
+
+def _report_exists(session: Session, clinic_id: UUID, resource_id: UUID) -> bool:
+    return ReportRepository(session).get_in_clinic(clinic_id, resource_id) is not None
+
+
+def _report_sync(session: Session, clinic_id: UUID, resource_id: UUID, approval: Approval) -> None:
+    report = ReportRepository(session).get_in_clinic(clinic_id, resource_id)
+    if report is None:
+        return
+    report.approval_state = approval.state
+    if approval.publication_state is PublicationState.PUBLISHED and report.published_at is None:
+        report.published_at = utcnow()
+    report.publication_state = approval.publication_state
+
+
+def _asset_exists(session: Session, clinic_id: UUID, resource_id: UUID) -> bool:
+    return AssetRepository(session).get_in_clinic(clinic_id, resource_id) is not None
+
+
+def _asset_sync(session: Session, clinic_id: UUID, resource_id: UUID, approval: Approval) -> None:
+    asset = AssetRepository(session).get_in_clinic(clinic_id, resource_id)
+    if asset is not None:
+        asset.approval_state = approval.state
+
+
+RESOURCE_HANDLERS: dict[str, ResourceHandler] = {
+    "report_artifact": ResourceHandler(exists=_report_exists, sync=_report_sync),
+    "asset": ResourceHandler(exists=_asset_exists, sync=_asset_sync),
+}
+
+
+# ------------------------------------------------------------- service functions
+def apply_action(session: Session, ctx: ClinicContext, data: ApprovalActionRequest) -> Approval:
+    handler = RESOURCE_HANDLERS.get(data.resource_type)
+    if handler is None:
+        raise DomainValidationError(
+            f"Unknown resource_type '{data.resource_type}'. Register it in app/services/governance.py."
+        )
+    if not ctx.can(REQUIRED_PERMISSION[data.action]):
+        raise ForbiddenError(f"You cannot '{data.action.value}' here")
+    if not handler.exists(session, ctx.clinic_id, data.resource_id):
+        raise NotFoundError("Resource not found in this clinic")
+
+    repo = ApprovalRepository(session)
+    approval = repo.get_for_resource(ctx.clinic_id, data.resource_type, data.resource_id)
+    if approval is None:
+        if data.action is not ApprovalAction.SUBMIT:
+            raise InvalidStateError("Submit the resource for review first")
+        approval = Approval(
+            clinic_id=ctx.clinic_id, resource_type=data.resource_type, resource_id=data.resource_id
+        )
+        repo.add(approval)
+
+    allowed_from, target = TRANSITIONS[data.action]
+    if approval.state not in allowed_from:
+        raise InvalidStateError(f"Cannot {data.action.value} when state is {approval.state.value}")
+
+    previous_state = approval.state
+    actor_id = ctx.principal.user_id
+    if target is not None:
+        approval.state = target
+    if data.action is ApprovalAction.SUBMIT:
+        approval.submitted_by_user_id = actor_id
+        approval.publication_state = PublicationState.UNPUBLISHED
+    elif data.action in (ApprovalAction.APPROVE, ApprovalAction.REJECT, ApprovalAction.REDO):
+        approval.decided_by_user_id = actor_id
+        if data.action is ApprovalAction.REDO and approval.publication_state is PublicationState.PUBLISHED:
+            approval.publication_state = PublicationState.RETRACTED
+    elif data.action is ApprovalAction.PUBLISH:
+        if approval.publication_state is PublicationState.PUBLISHED:
+            raise InvalidStateError("Already published")
+        approval.publication_state = PublicationState.PUBLISHED
+    elif data.action is ApprovalAction.HANDOFF:
+        _handoff(session, ctx, approval, data.assignee_user_id)
+
+    if data.comment is not None:
+        approval.last_comment = data.comment
+
+    handler.sync(session, ctx.clinic_id, data.resource_id, approval)
+    audit.record(
+        session,
+        actor=ctx.principal,
+        action=f"approval.{data.action.value}",
+        resource_type=data.resource_type,
+        resource_id=data.resource_id,
+        clinic_id=ctx.clinic_id,
+        details={
+            "approval_id": str(approval.id),
+            "from_state": previous_state.value,
+            "to_state": approval.state.value,
+            "publication_state": approval.publication_state.value,
+            "has_comment": data.comment is not None,
+        },
+    )
+    session.commit()
+    return approval
+
+
+def _handoff(session: Session, ctx: ClinicContext, approval: Approval, assignee_id: UUID | None) -> None:
+    if assignee_id is None:
+        raise DomainValidationError("assignee_user_id is required for handoff")
+    assignee = UserRepository(session).get(assignee_id)
+    if assignee is None or not assignee.is_active:
+        raise NotFoundError("Assignee not found")
+    if not build_principal(session, assignee).can_access_clinic(ctx.clinic_id):
+        raise DomainValidationError("Assignee has no access to this clinic")
+    approval.assignee_user_id = assignee.id
+    session.add(
+        Notification(
+            user_id=assignee.id,
+            clinic_id=ctx.clinic_id,
+            kind="approval.handoff",
+            title="An item was handed to you for review",
+            link=f"/clinics/{ctx.clinic_id}/approvals/{approval.id}",
+        )
+    )
+
+
+def list_approvals(
+    session: Session, ctx: ClinicContext, state: ApprovalState | None, limit: int, offset: int
+) -> tuple[list[Any], int]:
+    return ApprovalRepository(session).list_for_clinic(ctx.clinic_id, state, limit, offset)
+
+
+def get_approval(session: Session, ctx: ClinicContext, approval_id: UUID) -> Approval:
+    approval = ApprovalRepository(session).get_in_clinic(ctx.clinic_id, approval_id)
+    if approval is None:
+        raise NotFoundError("Approval not found")
+    return approval
+
+
+def list_audit_events(session: Session, ctx: ClinicContext, limit: int, offset: int) -> tuple[list[Any], int]:
+    return AuditEventRepository(session).list_for_clinic(ctx.clinic_id, limit, offset)
