@@ -74,11 +74,29 @@ def test_clinic_administrator_only_gets_their_clinic_and_no_internal_powers() ->
     assert not p.can_access_clinic(B)
 
 
-def test_reserved_team_member_role_has_no_access_and_is_not_grantable() -> None:
+def test_clinic_team_member_is_view_only_in_own_clinic() -> None:
     p = principal(PlatformRole.CLINIC_USER, clinic_roles={A: ClinicRole.CLINIC_TEAM_MEMBER})
-    assert not p.can_access_clinic(A)
-    assert p.accessible_clinic_ids() == set()
-    assert ClinicRole.CLINIC_TEAM_MEMBER not in GRANTABLE_CLINIC_ROLES
+    assert p.accessible_clinic_ids() == {A}
+    assert not p.can_access_clinic(B)
+    for allowed in (Permission.CLINICS_READ, Permission.ASSESSMENTS_READ, Permission.ASSETS_UPLOAD):
+        assert p.has(allowed, A)
+    for denied in (
+        Permission.CLINICS_WRITE,
+        Permission.TEAM_MANAGE,
+        Permission.PRACTITIONERS_WRITE,
+        Permission.APPROVALS_DECIDE,
+        Permission.ASSESSMENTS_REQUEST,  # => sees PUBLISHED assessments only
+        Permission.REPORTS_WRITE,  # => sees PUBLISHED reports only
+        Permission.AUDIT_LOG_READ,
+        Permission.CLINICS_MANAGE,
+    ):
+        assert not p.has(denied, A)
+    assert ClinicRole.CLINIC_TEAM_MEMBER in GRANTABLE_CLINIC_ROLES
+    # Strictly less than a Clinic Administrator.
+    assert (
+        CLINIC_ROLE_PERMISSIONS[ClinicRole.CLINIC_TEAM_MEMBER]
+        < CLINIC_ROLE_PERMISSIONS[ClinicRole.CLINIC_ADMINISTRATOR]
+    )
 
 
 def test_bad_data_grants_nothing() -> None:

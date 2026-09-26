@@ -125,12 +125,30 @@ CLINIC_ROLE_PERMISSIONS: Mapping[ClinicRole, frozenset[Permission]] = {
             P.AUDIT_LOG_READ,
         }
     ),
-    # Reserved: no access until the Clinic Team Member role is designed.
-    ClinicRole.CLINIC_TEAM_MEMBER: frozenset(),
+    #: Clinic staff (front desk, manager…). Mostly VIEW-ONLY inside their own clinic, plus
+    #: uploading photos/files. No editing clinic details, no adding people, no approvals, no
+    #: activity log. Reports: published only (enforced in the services, like Clinic Administrators).
+    ClinicRole.CLINIC_TEAM_MEMBER: frozenset(
+        {
+            P.CLINICS_READ,
+            P.PRACTITIONERS_READ,
+            P.PROFILE_READ,
+            P.PRESENCE_READ,
+            P.ASSETS_READ,
+            P.ASSETS_UPLOAD,
+            P.ASSESSMENTS_READ,  # published only
+            P.REPORTS_READ,  # published only
+            P.WORK_ITEMS_READ,
+            P.SNAPSHOTS_READ,
+        }
+    ),
 }
 
-#: Clinic roles that may be granted through the API today.
-GRANTABLE_CLINIC_ROLES: frozenset[ClinicRole] = frozenset({ClinicRole.CLINIC_ADMINISTRATOR})
+#: Clinic roles that may be granted through the API (by Admin, the clinic's DSM, or a Clinic
+#: Administrator of that clinic — anyone with team:manage there).
+GRANTABLE_CLINIC_ROLES: frozenset[ClinicRole] = frozenset(
+    {ClinicRole.CLINIC_ADMINISTRATOR, ClinicRole.CLINIC_TEAM_MEMBER}
+)
 
 
 @dataclass(frozen=True)

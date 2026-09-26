@@ -135,9 +135,33 @@ def test_snapshots_are_tenant_scoped(client, db, world, auth) -> None:  # type: 
 
 
 @pytest.mark.parametrize("path", CLINIC_SCOPED_GETS)
-def test_reserved_team_member_role_has_no_access_yet(client, world, auth, path) -> None:  # type: ignore[no-untyped-def]
+def test_clinic_team_member_can_view_own_clinic(client, world, auth, path) -> None:  # type: ignore[no-untyped-def]
     r = client.get(path.format(cid=world.clinic_a.id), headers=auth(world.team_member_a))
+    assert r.status_code == 200, (path, r.text)
+
+
+@pytest.mark.parametrize("path", CLINIC_SCOPED_GETS)
+def test_clinic_team_member_cannot_see_other_clinics(client, world, auth, path) -> None:  # type: ignore[no-untyped-def]
+    r = client.get(path.format(cid=world.clinic_b.id), headers=auth(world.team_member_a))
     assert r.status_code == 404
+
+
+def test_clinic_team_member_is_view_only(client, world, auth) -> None:  # type: ignore[no-untyped-def]
+    """Staff can look and upload photos, but not edit, add people, approve, or read the activity log."""
+    h = auth(world.team_member_a)
+    a = f"/api/v1/clinics/{world.clinic_a.id}"
+    assert client.patch(a, headers=h, json={"phone": "1"}).status_code == 403
+    assert client.post(f"{a}/team", headers=h, json={"email": "x@example.test"}).status_code == 403
+    assert client.post(f"{a}/practitioners", headers=h, json={"full_name": "Dr. X"}).status_code == 403
+    assert client.post(f"{a}/work-items", headers=h, json={"kind": "k", "title": "t"}).status_code == 403
+    assert client.get(f"{a}/audit-events", headers=h).status_code == 403
+    assert client.post(f"{a}/stage", headers=h, json={"stage": "client_discussion"}).status_code == 403
+    r = client.post(
+        f"{a}/assets/uploads",
+        headers=h,
+        json={"kind": "clinic_photo", "mime_type": "image/png", "size_bytes": 10},
+    )
+    assert r.status_code == 201, r.text
 
 
 def test_permission_denied_inside_own_clinic_is_403(client, world, auth) -> None:  # type: ignore[no-untyped-def]

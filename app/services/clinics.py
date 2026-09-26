@@ -342,7 +342,8 @@ def list_team(session: Session, ctx: ClinicContext) -> list[TeamMemberRead]:
 def add_team_member(
     session: Session, ctx: ClinicContext, data: TeamMemberCreate, invites: InviteSender, sign_in_url: str
 ) -> TeamMemberRead:
-    """Add a Clinic Administrator (DSM, Admin, or another Clinic Administrator of this clinic).
+    """Add a Clinic Administrator or Clinic Team Member (by the DSM, Admin, or a Clinic
+    Administrator of this clinic).
 
     Creates the (clinic_user) account if the email is new and sends an invite email.
     """

@@ -54,17 +54,18 @@ def test_team_adds_clinic_administrators_only(client, world, auth, invites) -> N
     r = client.post(
         path, headers=auth(world.dsm_a), json={"email": "tm@example.test", "role": "clinic_team_member"}
     )
-    assert r.status_code == 422  # reserved role
+    assert r.status_code == 201  # clinic staff login
+    assert r.json()["role"] == "clinic_team_member"
     # Decision D14: a Clinic Administrator may add another Clinic Administrator to their own clinic...
     r = client.post(path, headers=auth(world.clinic_admin_a), json={"email": "co@example.test"})
     assert r.status_code == 201
-    # ...but never a staff login, and never to another clinic.
+    # ...and clinic staff (Clinic Team Members), but never to another clinic.
     r = client.post(
         path,
         headers=auth(world.clinic_admin_a),
         json={"email": "s@example.test", "role": "clinic_team_member"},
     )
-    assert r.status_code == 422
+    assert r.status_code == 201
     other = f"/api/v1/clinics/{world.clinic_b.id}/team"
     r = client.post(other, headers=auth(world.clinic_admin_a), json={"email": "x@example.test"})
     assert r.status_code == 404

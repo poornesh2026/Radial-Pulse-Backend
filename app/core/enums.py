@@ -36,8 +36,7 @@ class ClinicRole(StrEnum):
     """
 
     CLINIC_ADMINISTRATOR = "clinic_administrator"
-    #: RESERVED for a future release. Has no permissions and cannot be granted through the
-    #: API yet. Legacy doctor/staff memberships were migrated to it (fail closed).
+    #: Clinic staff: view-only in their own clinic, plus uploading photos/files.
     CLINIC_TEAM_MEMBER = "clinic_team_member"
 
 

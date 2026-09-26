@@ -166,7 +166,8 @@ class PractitionerRead(ApiModel):
 # -------------------------------------------------------------------------- team
 class TeamMemberCreate(ApiModel):
     """Add a clinic-side person. Creates the (clinic_user) account if the email is new, and sends
-    an invite email. Only `clinic_administrator` can be granted today; `clinic_team_member` is reserved.
+    an invite email. Role `clinic_administrator` (default) or `clinic_team_member` (clinic staff: view-only
+    plus uploading photos/files).
     """
 
     email: Email
