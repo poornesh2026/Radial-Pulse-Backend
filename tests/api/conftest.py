@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.core.enums import ClinicRole, PlatformRole
-from app.models import Clinic, Doctor, User
-from tests.factories import add_member, assign, make_clinic, make_doctor, make_user
+from app.models import Clinic, Practitioner, User
+from tests.factories import add_member, assign, make_clinic, make_practitioner, make_user
 
 
 @dataclass
@@ -16,8 +16,8 @@ class World:
 
     clinic_a: Clinic
     clinic_b: Clinic
-    doctor_a: Doctor
-    doctor_b: Doctor
+    practitioner_a: Practitioner
+    practitioner_b: Practitioner
     admin: User  # Platform Administrator
     dsm_a: User  # Digital Success Manager assigned to A
     unassigned_dsm: User  # Digital Success Manager with no clinics
@@ -33,8 +33,8 @@ def world(db: Session) -> World:
     w = World(
         clinic_a=clinic_a,
         clinic_b=clinic_b,
-        doctor_a=make_doctor(db, clinic_a, "Dr. A"),
-        doctor_b=make_doctor(db, clinic_b, "Dr. B"),
+        practitioner_a=make_practitioner(db, clinic_a, "Dr. A", is_primary=True),
+        practitioner_b=make_practitioner(db, clinic_b, "Dr. B", is_primary=True),
         admin=make_user(db, PlatformRole.PLATFORM_ADMINISTRATOR),
         dsm_a=make_user(db, PlatformRole.DIGITAL_SUCCESS_MANAGER),
         unassigned_dsm=make_user(db, PlatformRole.DIGITAL_SUCCESS_MANAGER),

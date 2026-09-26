@@ -31,7 +31,7 @@ DOCS = {"application/pdf"}
 
 ALLOWED_MIME_TYPES: dict[AssetKind, set[str]] = {
     AssetKind.CLINIC_PHOTO: IMAGE,
-    AssetKind.DOCTOR_PHOTO: IMAGE,
+    AssetKind.PRACTITIONER_PHOTO: IMAGE,
     AssetKind.LOGO: IMAGE | {"image/svg+xml"},
     AssetKind.BRAND_ASSET: IMAGE | DOCS | {"image/svg+xml"},
     AssetKind.AUDIO: AUDIO,

@@ -5,13 +5,15 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.enums import WorkItemStatus
-from app.core.errors import DomainValidationError, NotFoundError
+from app.core.enums import WorkArea, WorkItemStatus
+from app.core.errors import ConflictError, DomainValidationError, NotFoundError
 from app.core.rbac import Actor, ClinicContext, Principal
 from app.db.base import utcnow
 from app.models import Notification, WorkItem
+from app.repositories.assessments import AssessmentRepository
 from app.repositories.governance import ApprovalRepository
 from app.repositories.users import UserRepository
 from app.repositories.work import NotificationRepository, WorkItemRepository
@@ -45,15 +47,43 @@ def _notify_owner(session: Session, item: WorkItem, actor: Actor) -> None:
         )
 
 
+def _sync_completed_at(item: WorkItem) -> None:
+    if item.status is WorkItemStatus.DONE:
+        item.completed_at = item.completed_at or utcnow()
+    else:
+        item.completed_at = None
+
+
 def create_work_item(session: Session, ctx: ClinicContext, data: WorkItemCreate) -> WorkItem:
+    """Create an Improvement Work Item. With ``source_finding_id`` this is "Fix Now" on a finding."""
     _check_owner(session, ctx.clinic_id, data.owner_user_id)
     if (
         data.approval_id
         and ApprovalRepository(session).get_in_clinic(ctx.clinic_id, data.approval_id) is None
     ):
         raise NotFoundError("Approval not found")
-    item = WorkItem(clinic_id=ctx.clinic_id, created_by_user_id=ctx.principal.user_id, **data.model_dump())
-    WorkItemRepository(session).add(item)
+    fields = data.model_dump()
+    if data.source_finding_id is not None:
+        found = AssessmentRepository(session).finding_with_key(ctx.clinic_id, data.source_finding_id)
+        if found is None:
+            raise NotFoundError("Finding not found in this clinic")
+        finding, key = found
+        fields["title"] = data.title or finding.title
+        fields["description"] = data.description or finding.recommendation or finding.description
+        fields["finding_code"] = data.finding_code or finding.code
+        fields["area"] = data.area or WorkArea(key.value)
+    fields["area"] = fields["area"] or WorkArea.OTHER
+    repo = WorkItemRepository(session)
+    if fields["finding_code"]:
+        existing = repo.open_for_finding(ctx.clinic_id, fields["finding_code"])
+        if existing is not None:
+            raise ConflictError(f"This problem already has an open work item ({existing.id})")
+    item = WorkItem(clinic_id=ctx.clinic_id, created_by_user_id=ctx.principal.user_id, **fields)
+    try:
+        repo.add(item)
+    except IntegrityError as exc:  # two people pressed "Fix Now" at the same time
+        session.rollback()
+        raise ConflictError("This problem already has an open work item") from exc
     _notify_owner(session, item, ctx.principal)
     audit.record(
         session,
@@ -62,7 +92,7 @@ def create_work_item(session: Session, ctx: ClinicContext, data: WorkItemCreate)
         resource_type="work_item",
         resource_id=item.id,
         clinic_id=ctx.clinic_id,
-        details={"kind": item.kind},
+        details={"kind": item.kind, "area": item.area.value, "finding_code": item.finding_code},
     )
     session.commit()
     return item
@@ -76,6 +106,7 @@ def update_work_item(session: Session, ctx: ClinicContext, item_id: UUID, data: 
     previous_owner = item.owner_user_id
     for field, value in changes.items():
         setattr(item, field, value)
+    _sync_completed_at(item)
     if item.owner_user_id != previous_owner:
         _notify_owner(session, item, ctx.principal)
     audit.record(
@@ -87,7 +118,11 @@ def update_work_item(session: Session, ctx: ClinicContext, item_id: UUID, data: 
         clinic_id=ctx.clinic_id,
         details={"fields": sorted(changes), "status": item.status.value},
     )
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:  # reopening a problem that already has another open item
+        session.rollback()
+        raise ConflictError("This problem already has another open work item") from exc
     return item
 
 
@@ -105,9 +140,10 @@ def list_work_items(
     owner_user_id: UUID | None,
     limit: int,
     offset: int,
+    area: WorkArea | None = None,
 ) -> tuple[list[Any], int]:
     return WorkItemRepository(session).list_for_clinic(
-        ctx.clinic_id, status=status, owner_user_id=owner_user_id, limit=limit, offset=offset
+        ctx.clinic_id, status=status, owner_user_id=owner_user_id, area=area, limit=limit, offset=offset
     )
 
 

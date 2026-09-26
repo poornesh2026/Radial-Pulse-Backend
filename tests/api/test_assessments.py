@@ -230,12 +230,21 @@ def test_clinic_admin_sees_only_published_and_review_flow(
 
     assert client.get(f"{base}/assessments", headers=auth(world.clinic_admin_a)).json()["total"] == 0
     assert act(world.dsm_a, "submit").status_code == 200
+    # The publication gate: a Clinic Administrator can never approve/reject an assessment.
+    assert act(world.clinic_admin_a, "approve").status_code == 403
+    assert act(world.clinic_admin_a, "reject").status_code == 403
     assert act(world.dsm_a, "approve").status_code == 200
     assert act(world.dsm_a, "publish").json()["publication_state"] == "published"
+    # ...and can never pull back ("redo" = retract) a published one.
+    assert act(world.clinic_admin_a, "redo").status_code == 403
     listed = client.get(f"{base}/assessments", headers=auth(world.clinic_admin_a)).json()
     assert listed["total"] == 1
     detail = client.get(f"{base}/assessments/{body['id']}", headers=auth(world.clinic_admin_a)).json()
     assert detail["published_at"] is not None and detail["overall_score"] == 60.0
+    # Every time the clinic opens its report, it is in the audit log (staff views are not).
+    client.get(f"{base}/assessments/{body['id']}", headers=auth(world.dsm_a))
+    viewed = client.get(f"{base}/audit-events", headers=auth(world.dsm_a)).json()["items"]
+    assert [e["action"] for e in viewed].count("assessment.viewed") == 1
     # Other clinics never see it.
     assert (
         client.get(f"{base}/assessments/{body['id']}", headers=auth(world.clinic_admin_b)).status_code == 404

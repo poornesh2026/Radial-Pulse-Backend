@@ -31,8 +31,8 @@ class PlatformRole(StrEnum):
 class ClinicRole(StrEnum):
     """What a clinic-side user is inside ONE clinic.
 
-    A doctor is NOT automatically a Clinic Administrator (or a user at all): doctors are
-    records in `doctors`; a login is a separate, optional link.
+    A practitioner (doctor) is NOT automatically a Clinic Administrator (or a user at all):
+    practitioners are records in `practitioners`; a login is a separate, optional link.
     """
 
     CLINIC_ADMINISTRATOR = "clinic_administrator"
@@ -100,7 +100,7 @@ class DataSource(StrEnum):
 
 class AssetKind(StrEnum):
     CLINIC_PHOTO = "clinic_photo"
-    DOCTOR_PHOTO = "doctor_photo"
+    PRACTITIONER_PHOTO = "practitioner_photo"
     BRAND_ASSET = "brand_asset"
     LOGO = "logo"
     AUDIO = "audio"
@@ -185,3 +185,44 @@ class JobStatus(StrEnum):
 
 class JobType(StrEnum):
     ASSESSMENT_RUN = "assessment.run"
+    #: "Refresh Profile": run Digital Presence Intelligence on its own. Reserved: no API route or
+    #: worker handler yet (domain team work).
+    PRESENCE_DISCOVER = "presence.discover"
+
+
+class ClinicStage(StrEnum):
+    """How far Radial Pulse has got with a clinic (the stepper on the Clinic Details screen).
+
+    Leads are given to the team; a stage only records progress. A clinic that says no is
+    ARCHIVED (``clinics.is_active = false`` + a reason), not moved to an extra stage.
+    """
+
+    PROSPECTIVE_CLIENT = "prospective_client"  # New lead
+    PROFILE_ENRICHED = "profile_enriched"  # Found online
+    ASSESSMENT_COMPLETED = "assessment_completed"  # Report ready
+    CLIENT_DISCUSSION = "client_discussion"  # In talks
+    ACTIVE_CLIENT = "active_client"  # Customer (Client Activation)
+
+
+class WorkArea(StrEnum):
+    """Which part of the clinic's digital presence a work item improves ("SEO 3 · GBP 2" chips).
+
+    The first six are the assessment component keys; two extra buckets cover the rest.
+    """
+
+    WEBSITE = "website"
+    GOOGLE_BUSINESS_PROFILE = "google_business_profile"
+    LOCAL_SEARCH = "local_search"
+    SEARCH_READINESS = "search_readiness"
+    SOCIAL_PRESENCE = "social_presence"
+    COMPETITOR_BENCHMARK = "competitor_benchmark"
+    CLINIC_PROFILE = "clinic_profile"
+    OTHER = "other"
+
+
+class UserStatus(StrEnum):
+    """Shown on the Users screen. Worked out from the user row, never stored."""
+
+    INVITED = "invited"  # created, has not signed in yet
+    ACTIVE = "active"
+    DEACTIVATED = "deactivated"

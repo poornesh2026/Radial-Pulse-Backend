@@ -85,6 +85,14 @@ class Settings(BaseSettings):
     #: Version label of the assessment METHODOLOGY (component set + scoring). Product-owned.
     assessment_methodology_version: str = "2026.09-v0"
 
+    # ---------------------------------------------------------------- invites
+    #: "log" = do not send (local/tests/until SES is ready); "ses" = Amazon SES v2.
+    invite_email_backend: Literal["log", "ses"] = "log"
+    #: Verified SES sender, e.g. "Radial Pulse <no-reply@radialpulse.com>". Required for "ses".
+    invite_from_email: str | None = None
+    #: Where invited people sign in (the web app). Mobile users use the app itself.
+    app_sign_in_url: str = "http://localhost:5173/sign-in"
+
     # --------------------------------------------------------------- validators
     @field_validator("cors_allowed_origins", "cognito_app_client_ids", mode="before")
     @classmethod
@@ -108,6 +116,8 @@ class Settings(BaseSettings):
             raise ValueError("COGNITO_REGION, COGNITO_USER_POOL_ID and COGNITO_APP_CLIENT_IDS are required")
         if self.job_queue_backend == "sqs" and not self.job_queue_url:
             raise ValueError("JOB_QUEUE_URL is required when JOB_QUEUE_BACKEND=sqs")
+        if self.invite_email_backend == "ses" and not self.invite_from_email:
+            raise ValueError("INVITE_FROM_EMAIL is required when INVITE_EMAIL_BACKEND=ses")
         return self
 
     # ------------------------------------------------------------ derived values

@@ -22,6 +22,7 @@ class MeResponse(ApiModel):
     id: UUID
     email: str
     full_name: str | None
+    phone: str | None = None
     platform_role: PlatformRole
     #: Platform-level permissions (e.g. clinics:create).
     permissions: list[Permission]

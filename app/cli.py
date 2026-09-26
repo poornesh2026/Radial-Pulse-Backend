@@ -1,6 +1,7 @@
 """Operator commands (run by a human, never by the web app).
 
     uv run python -m app.cli create-platform-admin --email you@company.com --name "Your Name"
+    uv run python -m app.cli seed-demo      # demo clinics like the screen designs (never in prod)
 
 Invite-only sign-in means the FIRST Platform Administrator must be created from the command
 line (after that, admins invite everyone else through the API). In AWS, run it as a
@@ -12,6 +13,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from app.core.config import get_settings
 from app.core.enums import PlatformRole
 from app.db.session import get_sessionmaker
 from app.models import User
@@ -47,15 +49,30 @@ def create_platform_admin(email: str, name: str | None) -> str:
         session.close()
 
 
+def seed_demo() -> str:
+    from app.seed import seed_demo as _seed
+
+    if get_settings().app_env == "prod":
+        raise SystemExit("Refusing to add demo data in prod.")
+    session = get_sessionmaker()()
+    try:
+        return _seed(session)
+    finally:
+        session.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
     admin = sub.add_parser("create-platform-admin", help="Create the first Platform Administrator")
     admin.add_argument("--email", required=True)
     admin.add_argument("--name", default=None)
+    sub.add_parser("seed-demo", help="Add demo clinics and people (local/dev only)")
     args = parser.parse_args(argv)
     if args.command == "create-platform-admin":
         sys.stdout.write(create_platform_admin(args.email, args.name) + "\n")
+    elif args.command == "seed-demo":
+        sys.stdout.write(seed_demo() + "\n")
     return 0
 
 

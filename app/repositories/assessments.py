@@ -75,3 +75,14 @@ class AssessmentRepository(Repository):
             )
         ):
             self.session.delete(old)
+
+    def finding_with_key(
+        self, clinic_id: UUID, finding_id: UUID
+    ) -> tuple[AssessmentFinding, AssessmentComponentKey] | None:
+        """A finding of this clinic plus the section (component key) it belongs to."""
+        row = self.session.execute(
+            select(AssessmentFinding, AssessmentComponent.key)
+            .join(AssessmentComponent, AssessmentComponent.id == AssessmentFinding.component_id)
+            .where(AssessmentFinding.clinic_id == clinic_id, AssessmentFinding.id == finding_id)
+        ).first()
+        return (row[0], row[1]) if row is not None else None

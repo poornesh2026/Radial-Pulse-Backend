@@ -101,6 +101,13 @@ def get_assessment(session: Session, ctx: ClinicContext, assessment_id: UUID) ->
         _published_only(ctx) and assessment.publication_state is not PublicationState.PUBLISHED
     ):
         raise NotFoundError("Assessment not found")
+    if _published_only(ctx):
+        # Every time a clinic person opens their report, it goes in the audit log.
+        audit.record(
+            session, actor=ctx.principal, action="assessment.viewed", resource_type=RESOURCE_TYPE,
+            resource_id=assessment.id, clinic_id=ctx.clinic_id, details={"sequence": assessment.sequence},
+        )  # fmt: skip
+        session.commit()
     components = repo.components(ctx.clinic_id, assessment.id)
     findings = repo.findings(ctx.clinic_id, assessment.id)
     order = list(AssessmentComponentKey)

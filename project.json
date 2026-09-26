@@ -177,6 +177,14 @@
         "command": "uv run pip-audit",
         "cwd": "services/api"
       }
+    },
+    "seed-demo": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "uv run python -m app.cli seed-demo",
+        "cwd": "services/api"
+      }
     }
   }
 }

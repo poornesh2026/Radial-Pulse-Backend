@@ -8,7 +8,14 @@ from app.models.jobs import BackgroundJob
 from app.models.presence import PresenceProfile
 from app.models.profile import ClinicProfile, ConsentRecord
 from app.models.reporting import MetricSnapshot, ReportArtifact
-from app.models.tenancy import Clinic, ClinicAssignment, ClinicMembership, Doctor, Organization
+from app.models.tenancy import (
+    Clinic,
+    ClinicAssignment,
+    ClinicMembership,
+    ClinicStageHistory,
+    Organization,
+    Practitioner,
+)
 from app.models.work import Notification, WorkItem
 
 __all__ = [
@@ -23,11 +30,12 @@ __all__ = [
     "ClinicAssignment",
     "ClinicMembership",
     "ClinicProfile",
+    "ClinicStageHistory",
     "ConsentRecord",
-    "Doctor",
     "MetricSnapshot",
     "Notification",
     "Organization",
+    "Practitioner",
     "PresenceProfile",
     "ReportArtifact",
     "User",

@@ -4,6 +4,7 @@ from functools import lru_cache
 
 from app.core.config import Settings, get_settings
 from app.core.errors import ServiceUnavailableError
+from app.integrations.invites import InviteSender, LoggingInviteSender, SesInviteSender
 from app.integrations.storage import ObjectStorage, S3ObjectStorage
 from app.jobs.queue import DatabaseJobQueue, JobQueue, SqsJobQueue
 
@@ -28,3 +29,11 @@ def get_job_queue() -> JobQueue:
     if settings.job_queue_backend == "database":
         return DatabaseJobQueue()
     raise ServiceUnavailableError("Background jobs are not configured (JOB_QUEUE_BACKEND)")
+
+
+@lru_cache
+def get_invite_sender() -> InviteSender:
+    settings = get_settings()
+    if settings.invite_email_backend == "ses" and settings.invite_from_email:
+        return SesInviteSender(settings.invite_from_email, settings.aws_region)
+    return LoggingInviteSender()

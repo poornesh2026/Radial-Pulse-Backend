@@ -1,18 +1,28 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Self
 from uuid import UUID
 
-from pydantic import Field, HttpUrl
+from pydantic import Field, HttpUrl, model_validator
 
-from app.core.enums import ClinicRole
+from app.core.enums import ClinicRole, ClinicStage, WorkArea
 from app.schemas.common import ApiModel, Email, ShortText
 
 
-class ClinicCreate(ApiModel):
+class _Location(ApiModel):
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+
+
+# ----------------------------------------------------------------------- clinics
+class ClinicCreate(_Location):
     name: ShortText
     #: Attach to an existing organization (another branch). Omit to create a new organization.
     organization_id: UUID | None = None
+    specialty: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    email: Email | None = None
     address_line: str | None = Field(default=None, max_length=300)
     city: str | None = Field(default=None, max_length=100)
     state: str | None = Field(default=None, max_length=100)
@@ -20,23 +30,40 @@ class ClinicCreate(ApiModel):
     country: str = Field(default="IN", min_length=2, max_length=2)
     phone: str | None = Field(default=None, max_length=32)
     website_url: HttpUrl | None = None
+    #: The main practitioner, created with the clinic (the "Doctor Name" in lists). Optional.
+    primary_practitioner_name: ShortText | None = None
+
+    @model_validator(mode="after")
+    def _lat_lng_together(self) -> Self:
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("latitude and longitude must be given together")
+        return self
 
 
-class ClinicUpdate(ApiModel):
+class ClinicUpdate(_Location):
+    """Edit clinic details. Stage and archiving have their own routes."""
+
     name: ShortText | None = None
+    specialty: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    email: Email | None = None
     address_line: str | None = Field(default=None, max_length=300)
     city: str | None = Field(default=None, max_length=100)
     state: str | None = Field(default=None, max_length=100)
     postal_code: str | None = Field(default=None, max_length=20)
     phone: str | None = Field(default=None, max_length=32)
     website_url: HttpUrl | None = None
-    is_active: bool | None = None
+    #: An uploaded clinic_photo asset of THIS clinic (or null to remove the photo).
+    cover_asset_id: UUID | None = None
 
 
 class ClinicRead(ApiModel):
     id: UUID
     organization_id: UUID
     name: str
+    specialty: str | None
+    description: str | None
+    email: str | None
     address_line: str | None
     city: str | None
     state: str | None
@@ -44,49 +71,107 @@ class ClinicRead(ApiModel):
     country: str
     phone: str | None
     website_url: str | None
+    latitude: float | None
+    longitude: float | None
+    cover_asset_id: UUID | None
+    stage: ClinicStage
+    stage_changed_at: datetime
     is_active: bool
+    archived_reason: str | None
     created_at: datetime
     updated_at: datetime
 
 
-class DoctorCreate(ApiModel):
+class PersonRef(ApiModel):
+    id: UUID
+    full_name: str | None
+    email: str
+
+
+class AreaCount(ApiModel):
+    area: WorkArea
+    open_count: int
+
+
+class ClinicListItem(ClinicRead):
+    """A row of the Clinics / My Client Portfolio table."""
+
+    primary_practitioner_name: str | None
+    #: The clinic's Digital Success Manager (null = not assigned).
+    dsm: PersonRef | None
+    #: Open work items per area — the "SEO 3 · GBP 2" chips. Only areas with open items.
+    open_work: list[AreaCount]
+
+
+class StageChange(ApiModel):
+    stage: ClinicStage
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class StageHistoryRead(ApiModel):
+    id: UUID
+    clinic_id: UUID
+    from_stage: ClinicStage | None
+    to_stage: ClinicStage
+    note: str | None
+    changed_by_user_id: UUID | None
+    changed_at: datetime
+
+
+class ArchiveRequest(ApiModel):
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+# ------------------------------------------------------------------ practitioners
+class PractitionerCreate(ApiModel):
     full_name: ShortText
     specialty: str | None = Field(default=None, max_length=120)
     qualifications: str | None = Field(default=None, max_length=300)
     registration_number: str | None = Field(default=None, max_length=64)
-    #: Link an existing user login (optional — most doctors will not have one at first).
+    bio: str | None = Field(default=None, max_length=5000)
+    #: Make this the clinic's main practitioner (replaces the current one).
+    is_primary: bool = False
+    #: Link an existing clinic user login (optional — most practitioners will not have one).
     user_id: UUID | None = None
 
 
-class DoctorUpdate(ApiModel):
+class PractitionerUpdate(ApiModel):
     full_name: ShortText | None = None
     specialty: str | None = Field(default=None, max_length=120)
     qualifications: str | None = Field(default=None, max_length=300)
     registration_number: str | None = Field(default=None, max_length=64)
+    bio: str | None = Field(default=None, max_length=5000)
+    is_primary: bool | None = None
     is_active: bool | None = None
 
 
-class DoctorRead(ApiModel):
+class PractitionerRead(ApiModel):
     id: UUID
     clinic_id: UUID
     full_name: str
     specialty: str | None
     qualifications: str | None
     registration_number: str | None
+    bio: str | None
+    is_primary: bool
     user_id: UUID | None
     is_active: bool
     created_at: datetime
 
 
+# -------------------------------------------------------------------------- team
 class TeamMemberCreate(ApiModel):
-    """Add a clinic-side person. Creates the (clinic_user) account if the email is new.
-
-    Only `clinic_administrator` can be granted today; `clinic_team_member` is reserved.
+    """Add a clinic-side person. Creates the (clinic_user) account if the email is new, and sends
+    an invite email. Only `clinic_administrator` can be granted today; `clinic_team_member` is reserved.
     """
 
     email: Email
     full_name: str | None = Field(default=None, max_length=200)
     role: ClinicRole = ClinicRole.CLINIC_ADMINISTRATOR
+
+
+class TeamMemberUpdate(ApiModel):
+    is_active: bool
 
 
 class TeamMemberRead(ApiModel):
@@ -97,10 +182,13 @@ class TeamMemberRead(ApiModel):
     full_name: str | None
     role: ClinicRole
     is_active: bool
+    #: False until the person signs in for the first time.
+    has_signed_in: bool
 
 
-class AssignmentCreate(ApiModel):
-    """Assign a Digital Success Manager to this clinic."""
+# ------------------------------------------------------------ portfolio allocation
+class AssignmentSet(ApiModel):
+    """Make this Digital Success Manager THE DSM of the clinic (replaces the current one)."""
 
     user_id: UUID
 
@@ -110,4 +198,6 @@ class AssignmentRead(ApiModel):
     clinic_id: UUID
     user_id: UUID
     is_active: bool
+    assigned_by_user_id: UUID | None
     created_at: datetime
+    updated_at: datetime

@@ -32,10 +32,11 @@ from app.core.config import Settings
 from app.core.security import CognitoTokenVerifier
 from app.db.base import Base
 from app.db.session import get_engine
-from app.dependencies.adapters import get_job_queue, get_storage, settings_dependency
+from app.dependencies.adapters import get_invite_sender, get_job_queue, get_storage, settings_dependency
 from app.dependencies.auth import get_token_verifier, get_userinfo_client
 from app.dependencies.db import get_db
 from app.integrations.cognito import UserInfo
+from app.integrations.invites import Invite
 from app.integrations.storage import ObjectInfo
 from app.jobs.queue import InMemoryJobQueue
 from app.main import create_app
@@ -131,6 +132,19 @@ class InMemoryStorage:
     def delete(self, key: str) -> None:
         self.objects.pop(key, None)
         self.deleted.append(key)
+
+
+@dataclass
+class RecordingInvites:
+    """Test double for the invite email sender. Set ``fail = True`` to simulate an outage."""
+
+    sent: list[Invite] = field(default_factory=list)
+    fail: bool = False
+
+    def send(self, invite: Invite) -> None:
+        if self.fail:
+            raise RuntimeError("email service down")
+        self.sent.append(invite)
 
 
 # --------------------------------------------------------------------- database
@@ -258,6 +272,11 @@ def userinfo() -> FakeUserInfo:
 
 
 @pytest.fixture
+def invites() -> RecordingInvites:
+    return RecordingInvites()
+
+
+@pytest.fixture
 def client(
     settings: Settings,
     engine: Engine,
@@ -266,6 +285,7 @@ def client(
     storage: InMemoryStorage,
     userinfo: FakeUserInfo,
     job_queue: InMemoryJobQueue,
+    invites: RecordingInvites,
 ) -> Iterator[TestClient]:
     application = create_app(settings)
 
@@ -284,6 +304,7 @@ def client(
             get_userinfo_client: lambda: userinfo,
             get_storage: lambda: storage,
             get_job_queue: lambda: job_queue,
+            get_invite_sender: lambda: invites,
             settings_dependency: lambda: settings,
         }
     )

@@ -27,7 +27,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="Radial Pulse API",
         version=settings.service_version,
         description=(
-            "Platform API for Radial Pulse (clinics & doctors). Every clinic-scoped route is "
+            "Platform API for Radial Pulse (clinics & practitioners). Every clinic-scoped route is "
             "authorized server-side; see docs/architecture/multi-tenancy.md."
         ),
         debug=settings.debug,

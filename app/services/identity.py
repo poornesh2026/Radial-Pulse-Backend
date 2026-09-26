@@ -104,6 +104,7 @@ def me(session: Session, principal: Principal) -> MeResponse:
         id=user.id,
         email=user.email,
         full_name=user.full_name,
+        phone=user.phone,
         platform_role=user.platform_role,
         permissions=sorted(principal.global_permissions()),
         clinics=clinics,

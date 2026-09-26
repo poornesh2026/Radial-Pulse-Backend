@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.routers._common import ERRORS, Limit, Offset
-from app.core.enums import WorkItemStatus
+from app.core.enums import WorkArea, WorkItemStatus
 from app.core.rbac import ClinicContext, Permission
 from app.dependencies.db import get_db
 from app.dependencies.tenancy import clinic_access
@@ -21,16 +21,22 @@ router = APIRouter(prefix="/clinics/{clinic_id}/work-items", tags=["work-items"]
 def list_work_items(
     status_filter: WorkItemStatus | None = Query(default=None, alias="status"),
     owner_user_id: UUID | None = Query(default=None),
+    area: WorkArea | None = Query(default=None),
     limit: Limit = 50,
     offset: Offset = 0,
     ctx: ClinicContext = Depends(clinic_access(Permission.WORK_ITEMS_READ)),
     db: Session = Depends(get_db),
 ) -> Page[WorkItemRead]:
-    items, total = service.list_work_items(db, ctx, status_filter, owner_user_id, limit, offset)
+    items, total = service.list_work_items(db, ctx, status_filter, owner_user_id, limit, offset, area=area)
     return Page[WorkItemRead](items=items, total=total, limit=limit, offset=offset)
 
 
-@router.post("", response_model=WorkItemRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=WorkItemRead,
+    status_code=status.HTTP_201_CREATED,
+    summary='Create a work item. "Fix Now" on a finding: send source_finding_id',
+)
 def create_work_item(
     body: WorkItemCreate,
     ctx: ClinicContext = Depends(clinic_access(Permission.WORK_ITEMS_WRITE)),

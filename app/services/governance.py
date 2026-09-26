@@ -65,6 +65,8 @@ class ResourceHandler:
     sync: Callable[[Session, UUID, UUID, Approval], None]
     #: Optional: raise InvalidStateError if the resource is not ready to be submitted.
     before_submit: Callable[[Session, UUID, UUID], None] | None = None
+    #: Only Radial Pulse staff may act on it (the assessment publication gate).
+    staff_only: bool = False
 
 
 def _report_exists(session: Session, clinic_id: UUID, resource_id: UUID) -> bool:
@@ -120,8 +122,9 @@ def _assessment_sync(session: Session, clinic_id: UUID, resource_id: UUID, appro
 
 RESOURCE_HANDLERS: dict[str, ResourceHandler] = {
     # The ONE user-facing Digital Presence Assessment.
+    # Staff-only: clinic users never approve, reject, redo (retract) or publish it.
     "assessment": ResourceHandler(
-        exists=_assessment_exists, sync=_assessment_sync, before_submit=_assessment_ready
+        exists=_assessment_exists, sync=_assessment_sync, before_submit=_assessment_ready, staff_only=True
     ),
     # Other outputs (exports, briefs, media) and uploaded assets.
     "report_artifact": ResourceHandler(exists=_report_exists, sync=_report_sync),
@@ -138,6 +141,8 @@ def apply_action(session: Session, ctx: ClinicContext, data: ApprovalActionReque
         )
     if not ctx.can(REQUIRED_PERMISSION[data.action]):
         raise ForbiddenError(f"You cannot '{data.action.value}' here")
+    if handler.staff_only and not ctx.principal.is_internal:
+        raise ForbiddenError("Only the Radial Pulse team reviews this")
     if not handler.exists(session, ctx.clinic_id, data.resource_id):
         raise NotFoundError("Resource not found in this clinic")
     if data.action is ApprovalAction.SUBMIT and handler.before_submit is not None:

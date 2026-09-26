@@ -31,8 +31,11 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def str_enum(enum_cls: type[StrEnum], length: int = 32) -> Enum:
-    """Store a StrEnum as VARCHAR + CHECK constraint (no native PG enum → no ALTER TYPE pain)."""
+def str_enum(enum_cls: type[StrEnum], length: int = 32, name: str | None = None) -> Enum:
+    """Store a StrEnum as VARCHAR + CHECK constraint (no native PG enum → no ALTER TYPE pain).
+
+    ``name`` names the CHECK constraint; pass it when one table has two columns of the same enum.
+    """
     return Enum(
         enum_cls,
         native_enum=False,
@@ -40,7 +43,7 @@ def str_enum(enum_cls: type[StrEnum], length: int = 32) -> Enum:
         values_callable=lambda e: [m.value for m in e],
         validate_strings=True,
         create_constraint=True,
-        name=f"{enum_cls.__name__.lower()}",
+        name=name or enum_cls.__name__.lower(),
     )
 
 

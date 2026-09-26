@@ -11,12 +11,12 @@ import uuid
 import pytest
 
 from app.core.enums import AssetKind, AssetStatus, DataSource, SnapshotStatus
-from app.models import Asset, MetricSnapshot, ReportArtifact, WorkItem
+from app.models import Asset, ClinicMembership, MetricSnapshot, ReportArtifact, WorkItem
 
 CLINIC_SCOPED_GETS = [
     "/api/v1/clinics/{cid}",
     "/api/v1/clinics/{cid}/team",
-    "/api/v1/clinics/{cid}/doctors",
+    "/api/v1/clinics/{cid}/practitioners",
     "/api/v1/clinics/{cid}/assignments",
     "/api/v1/clinics/{cid}/profile",
     "/api/v1/clinics/{cid}/assets",
@@ -66,10 +66,10 @@ def test_clinic_list_only_contains_accessible_clinics(client, world, auth) -> No
     assert names(world.admin) == {"Smile Dental A", "Bright Clinic B"}
 
 
-def test_doctor_of_b_cannot_be_reached_through_clinic_a_path(client, world, auth) -> None:  # type: ignore[no-untyped-def]
-    """Owner of A has doctors:write in A. Using A's path with B's doctor id must not touch B."""
+def test_practitioner_of_b_cannot_be_reached_through_clinic_a_path(client, world, auth) -> None:  # type: ignore[no-untyped-def]
+    """Admin of A has practitioners:write in A. Using A's path with B's practitioner id must not touch B."""
     r = client.patch(
-        f"/api/v1/clinics/{world.clinic_a.id}/doctors/{world.doctor_b.id}",
+        f"/api/v1/clinics/{world.clinic_a.id}/practitioners/{world.practitioner_b.id}",
         headers=auth(world.clinic_admin_a),
         json={"full_name": "Hijacked"},
     )
@@ -80,7 +80,8 @@ def test_writes_into_other_clinic_are_blocked(client, world, auth) -> None:  # t
     cid = world.clinic_b.id
     h = auth(world.clinic_admin_a)
     assert (
-        client.post(f"/api/v1/clinics/{cid}/doctors", headers=h, json={"full_name": "X"}).status_code == 404
+        client.post(f"/api/v1/clinics/{cid}/practitioners", headers=h, json={"full_name": "X"}).status_code
+        == 404
     )
     assert client.patch(f"/api/v1/clinics/{cid}", headers=h, json={"name": "X"}).status_code == 404
     assert (
@@ -154,3 +155,41 @@ def test_permission_denied_inside_own_clinic_is_403(client, world, auth) -> None
         ).status_code
         == 403
     )
+
+
+def test_milestone1_clinic_routes_are_tenant_scoped(client, db, world, auth) -> None:  # type: ignore[no-untyped-def]
+    """Stage, archive, team and practitioner routes of clinic A are invisible to clinic B's people."""
+    a = world.clinic_a.id
+    membership = db.query(ClinicMembership).filter_by(user_id=world.clinic_admin_a.id).one()
+    h = auth(world.clinic_admin_b)
+    calls = [
+        ("post", f"/api/v1/clinics/{a}/stage", {"stage": "profile_enriched"}),
+        ("get", f"/api/v1/clinics/{a}/stage-history", None),
+        ("post", f"/api/v1/clinics/{a}/archive", {"reason": "sneaky"}),
+        ("post", f"/api/v1/clinics/{a}/restore", None),
+        ("post", f"/api/v1/clinics/{a}/team", {"email": "x@example.test"}),
+        ("patch", f"/api/v1/clinics/{a}/team/{membership.id}", {"is_active": False}),
+        ("post", f"/api/v1/clinics/{a}/team/{membership.id}/resend-invite", None),
+        ("patch", f"/api/v1/clinics/{a}/practitioners/{world.practitioner_a.id}", {"full_name": "X"}),
+    ]
+    for method, path, body in calls:
+        r = client.request(method.upper(), path, headers=h, json=body)
+        assert r.status_code == 404, (method, path, r.status_code)
+
+
+def test_team_member_ids_from_other_clinic_are_404(client, db, world, auth) -> None:  # type: ignore[no-untyped-def]
+    b_membership = db.query(ClinicMembership).filter_by(user_id=world.clinic_admin_b.id).one()
+    r = client.patch(
+        f"/api/v1/clinics/{world.clinic_a.id}/team/{b_membership.id}",
+        headers=auth(world.dsm_a),
+        json={"is_active": False},
+    )
+    assert r.status_code == 404
+
+
+def test_assignment_routes_are_platform_administrator_only(client, world, auth) -> None:  # type: ignore[no-untyped-def]
+    path = f"/api/v1/clinics/{world.clinic_a.id}/assignment"
+    body = {"user_id": str(world.unassigned_dsm.id)}
+    for user in (world.dsm_a, world.clinic_admin_a, world.clinic_admin_b):
+        assert client.put(path, headers=auth(user), json=body).status_code == 403
+        assert client.delete(path, headers=auth(user)).status_code == 403

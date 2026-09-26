@@ -31,9 +31,11 @@ class Permission(StrEnum):
     # ---- clinic-scoped ----
     CLINICS_READ = "clinics:read"
     CLINICS_WRITE = "clinics:write"
+    #: Move a clinic through the stages and archive/restore it. Radial Pulse staff only.
+    CLINICS_MANAGE = "clinics:manage"
     TEAM_MANAGE = "team:manage"
-    DOCTORS_READ = "doctors:read"
-    DOCTORS_WRITE = "doctors:write"
+    PRACTITIONERS_READ = "practitioners:read"
+    PRACTITIONERS_WRITE = "practitioners:write"
     PROFILE_READ = "profile:read"
     PROFILE_WRITE = "profile:write"
     PRESENCE_READ = "presence:read"
@@ -83,8 +85,8 @@ PLATFORM_ADMINISTRATOR_CLINIC_PERMISSIONS: frozenset[Permission] = (
 #: What a Digital Success Manager can do inside a clinic they are ASSIGNED to.
 DIGITAL_SUCCESS_MANAGER_CLINIC_PERMISSIONS: frozenset[Permission] = frozenset(
     {
-        P.CLINICS_READ, P.CLINICS_WRITE, P.TEAM_MANAGE,
-        P.DOCTORS_READ, P.DOCTORS_WRITE,
+        P.CLINICS_READ, P.CLINICS_WRITE, P.CLINICS_MANAGE, P.TEAM_MANAGE,
+        P.PRACTITIONERS_READ, P.PRACTITIONERS_WRITE,
         P.PROFILE_READ, P.PROFILE_WRITE,
         P.PRESENCE_READ, P.PRESENCE_WRITE,
         P.ASSETS_READ, P.ASSETS_UPLOAD,
@@ -102,8 +104,11 @@ CLINIC_ROLE_PERMISSIONS: Mapping[ClinicRole, frozenset[Permission]] = {
         {
             P.CLINICS_READ,
             P.CLINICS_WRITE,
-            P.DOCTORS_READ,
-            P.DOCTORS_WRITE,
+            #: May add OTHER Clinic Administrators to their own clinic (decision D14).
+            #: Only GRANTABLE_CLINIC_ROLES can be granted, so no staff logins yet.
+            P.TEAM_MANAGE,
+            P.PRACTITIONERS_READ,
+            P.PRACTITIONERS_WRITE,
             P.PROFILE_READ,
             P.PROFILE_WRITE,
             P.PRESENCE_READ,
@@ -112,7 +117,9 @@ CLINIC_ROLE_PERMISSIONS: Mapping[ClinicRole, frozenset[Permission]] = {
             P.ASSETS_UPLOAD,
             P.ASSESSMENTS_READ,  # published assessments only (enforced in the service)
             P.REPORTS_READ,  # published reports only
-            P.APPROVALS_DECIDE,  # approve/reject content prepared for the clinic
+            #: Approve/reject content prepared FOR the clinic (e.g. photos, a website brief).
+            #: Never an assessment: assessment review is staff-only (see governance.py).
+            P.APPROVALS_DECIDE,
             P.WORK_ITEMS_READ,
             P.SNAPSHOTS_READ,
             P.AUDIT_LOG_READ,

@@ -56,6 +56,7 @@ def test_digital_success_manager_only_gets_assigned_clinics() -> None:
     assert p.has(Permission.ASSESSMENTS_REQUEST, A)
     assert p.has(Permission.APPROVALS_PUBLISH, A)
     assert p.has(Permission.CLINICS_CREATE)
+    assert p.has(Permission.CLINICS_MANAGE, A)  # moves stages, archives
     assert not p.has(Permission.ASSIGNMENTS_MANAGE)
     assert not p.can_access_clinic(B)
 
@@ -65,8 +66,11 @@ def test_clinic_administrator_only_gets_their_clinic_and_no_internal_powers() ->
     assert p.accessible_clinic_ids() == {A}
     assert p.has(Permission.PROFILE_WRITE, A)
     assert p.has(Permission.ASSESSMENTS_READ, A)
-    for internal in (Permission.ASSESSMENTS_REQUEST, Permission.APPROVALS_PUBLISH, Permission.TEAM_MANAGE):
+    for internal in (Permission.ASSESSMENTS_REQUEST, Permission.APPROVALS_PUBLISH, Permission.CLINICS_MANAGE):
         assert not p.has(internal, A)
+    # Decision D14: a Clinic Administrator may add other Clinic Administrators to their own clinic.
+    assert p.has(Permission.TEAM_MANAGE, A)
+    assert not p.has(Permission.TEAM_MANAGE, B)
     assert not p.can_access_clinic(B)
 
 

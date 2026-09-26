@@ -1,13 +1,30 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Select, exists, func, or_, select, update
 
-from app.models import Clinic, ClinicAssignment, ClinicMembership, Doctor, Organization, User
+from app.core.enums import ClinicRole, ClinicStage, WorkArea, WorkItemStatus
+from app.models import (
+    Clinic,
+    ClinicAssignment,
+    ClinicMembership,
+    ClinicStageHistory,
+    Organization,
+    Practitioner,
+    User,
+    WorkItem,
+)
 from app.repositories.base import Repository
+
+OPEN_WORK_STATUSES = (
+    WorkItemStatus.TODO,
+    WorkItemStatus.IN_PROGRESS,
+    WorkItemStatus.BLOCKED,
+    WorkItemStatus.IN_REVIEW,
+)
 
 
 class OrganizationRepository(Repository):
@@ -21,30 +38,129 @@ class ClinicRepository(Repository):
         return self.session.get(Clinic, clinic_id)
 
     def list_accessible(
-        self, clinic_ids: Iterable[UUID] | None, limit: int, offset: int
+        self,
+        clinic_ids: Iterable[UUID] | None,
+        limit: int,
+        offset: int,
+        *,
+        stages: Sequence[ClinicStage] | None = None,
+        dsm_user_id: UUID | None = None,
+        unassigned: bool = False,
+        search: str | None = None,
+        archived: bool = False,
     ) -> tuple[list[Any], int]:
-        """``clinic_ids=None`` means all clinics (Platform Administrator). An empty set returns nothing."""
-        stmt = select(Clinic).order_by(Clinic.name, Clinic.id)
+        """``clinic_ids=None`` means all clinics (Platform Administrator). An empty set returns nothing.
+
+        ``archived=False`` lists live clinics; ``archived=True`` lists only archived ones.
+        ``search`` matches clinic name, website or any practitioner's name (case-insensitive).
+        """
+        stmt: Select[Any] = select(Clinic).where(Clinic.is_active.is_(not archived))
         if clinic_ids is not None:
             ids = list(clinic_ids)
             if not ids:
                 return [], 0
             stmt = stmt.where(Clinic.id.in_(ids))
-        return self.paginate(stmt, limit, offset)
+        if stages:
+            stmt = stmt.where(Clinic.stage.in_(list(stages)))
+        active_dsm = (
+            select(ClinicAssignment.id)
+            .where(ClinicAssignment.clinic_id == Clinic.id, ClinicAssignment.is_active.is_(True))
+            .correlate(Clinic)
+        )
+        if dsm_user_id is not None:
+            stmt = stmt.where(exists(active_dsm.where(ClinicAssignment.user_id == dsm_user_id)))
+        if unassigned:
+            stmt = stmt.where(~exists(active_dsm))
+        if search:
+            pattern = f"%{search.strip()}%"
+            practitioner_match = (
+                select(Practitioner.id)
+                .where(Practitioner.clinic_id == Clinic.id, Practitioner.full_name.ilike(pattern))
+                .correlate(Clinic)
+            )
+            stmt = stmt.where(
+                or_(Clinic.name.ilike(pattern), Clinic.website_url.ilike(pattern), exists(practitioner_match))
+            )
+        return self.paginate(stmt.order_by(Clinic.name, Clinic.id), limit, offset)
 
     def ids_in_organization(self, organization_id: UUID) -> list[UUID]:
         return list(self.session.scalars(select(Clinic.id).where(Clinic.organization_id == organization_id)))
 
+    # ---- extra columns for list screens (one query each for a whole page of clinics) ----
+    def primary_practitioner_names(self, clinic_ids: Sequence[UUID]) -> dict[UUID, str]:
+        if not clinic_ids:
+            return {}
+        rows = self.session.execute(
+            select(Practitioner.clinic_id, Practitioner.full_name).where(
+                Practitioner.clinic_id.in_(clinic_ids),
+                Practitioner.is_primary.is_(True),
+                Practitioner.is_active.is_(True),
+            )
+        )
+        return {cid: name for cid, name in rows}
 
-class DoctorRepository(Repository):
+    def active_dsms(self, clinic_ids: Sequence[UUID]) -> dict[UUID, User]:
+        if not clinic_ids:
+            return {}
+        rows = self.session.execute(
+            select(ClinicAssignment.clinic_id, User)
+            .join(User, User.id == ClinicAssignment.user_id)
+            .where(ClinicAssignment.clinic_id.in_(clinic_ids), ClinicAssignment.is_active.is_(True))
+        )
+        return {cid: user for cid, user in rows}
+
+    def open_work_counts(self, clinic_ids: Sequence[UUID]) -> dict[UUID, list[tuple[WorkArea, int]]]:
+        if not clinic_ids:
+            return {}
+        rows = self.session.execute(
+            select(WorkItem.clinic_id, WorkItem.area, func.count())
+            .where(WorkItem.clinic_id.in_(clinic_ids), WorkItem.status.in_(OPEN_WORK_STATUSES))
+            .group_by(WorkItem.clinic_id, WorkItem.area)
+            .order_by(WorkItem.clinic_id, WorkItem.area)
+        )
+        result: dict[UUID, list[tuple[WorkArea, int]]] = {}
+        for cid, area, count in rows:
+            result.setdefault(cid, []).append((area, int(count)))
+        return result
+
+
+class StageHistoryRepository(Repository):
+    """Append-only: there is deliberately no update or delete here."""
+
+    def list_for_clinic(self, clinic_id: UUID) -> list[ClinicStageHistory]:
+        stmt = (
+            select(ClinicStageHistory)
+            .where(ClinicStageHistory.clinic_id == clinic_id)
+            .order_by(ClinicStageHistory.changed_at, ClinicStageHistory.id)
+        )
+        return list(self.session.scalars(stmt))
+
+
+class PractitionerRepository(Repository):
     def list_for_clinic(self, clinic_id: UUID, limit: int, offset: int) -> tuple[list[Any], int]:
-        stmt = select(Doctor).where(Doctor.clinic_id == clinic_id).order_by(Doctor.full_name, Doctor.id)
+        stmt = (
+            select(Practitioner)
+            .where(Practitioner.clinic_id == clinic_id)
+            .order_by(Practitioner.is_primary.desc(), Practitioner.full_name, Practitioner.id)
+        )
         return self.paginate(stmt, limit, offset)
 
-    def get_in_clinic(self, clinic_id: UUID, doctor_id: UUID) -> Doctor | None:
+    def get_in_clinic(self, clinic_id: UUID, practitioner_id: UUID) -> Practitioner | None:
         return self.session.scalar(
-            select(Doctor).where(Doctor.clinic_id == clinic_id, Doctor.id == doctor_id)
+            select(Practitioner).where(
+                Practitioner.clinic_id == clinic_id, Practitioner.id == practitioner_id
+            )
         )
+
+    def clear_primary(self, clinic_id: UUID) -> None:
+        """Un-mark the clinic's current main practitioner (before marking another one)."""
+        self.session.execute(
+            update(Practitioner)
+            .where(Practitioner.clinic_id == clinic_id, Practitioner.is_primary.is_(True))
+            .values(is_primary=False)
+            .execution_options(synchronize_session="fetch")
+        )
+        self.session.flush()
 
 
 class MembershipRepository(Repository):
@@ -59,6 +175,29 @@ class MembershipRepository(Repository):
             select(ClinicMembership).where(
                 ClinicMembership.clinic_id == clinic_id, ClinicMembership.user_id == user_id
             )
+        )
+
+    def get_in_clinic(self, clinic_id: UUID, membership_id: UUID) -> ClinicMembership | None:
+        return self.session.scalar(
+            select(ClinicMembership).where(
+                ClinicMembership.clinic_id == clinic_id, ClinicMembership.id == membership_id
+            )
+        )
+
+    def count_active_admins(self, clinic_id: UUID) -> int:
+        return int(
+            self.session.scalar(
+                select(func.count())
+                .select_from(ClinicMembership)
+                .join(User, User.id == ClinicMembership.user_id)
+                .where(
+                    ClinicMembership.clinic_id == clinic_id,
+                    ClinicMembership.role == ClinicRole.CLINIC_ADMINISTRATOR,
+                    ClinicMembership.is_active.is_(True),
+                    User.is_active.is_(True),
+                )
+            )
+            or 0
         )
 
     def team_for_clinic(self, clinic_id: UUID) -> list[tuple[ClinicMembership, User]]:
@@ -78,7 +217,15 @@ class AssignmentRepository(Repository):
         )
         return list(self.session.scalars(stmt))
 
+    def active_for_clinic(self, clinic_id: UUID) -> ClinicAssignment | None:
+        return self.session.scalar(
+            select(ClinicAssignment).where(
+                ClinicAssignment.clinic_id == clinic_id, ClinicAssignment.is_active.is_(True)
+            )
+        )
+
     def for_clinic(self, clinic_id: UUID) -> list[ClinicAssignment]:
+        """The clinic's DSM now and before (history), oldest first."""
         stmt = (
             select(ClinicAssignment)
             .where(ClinicAssignment.clinic_id == clinic_id)
@@ -86,16 +233,19 @@ class AssignmentRepository(Repository):
         )
         return list(self.session.scalars(stmt))
 
-    def get_in_clinic(self, clinic_id: UUID, assignment_id: UUID) -> ClinicAssignment | None:
-        return self.session.scalar(
-            select(ClinicAssignment).where(
-                ClinicAssignment.clinic_id == clinic_id, ClinicAssignment.id == assignment_id
-            )
-        )
-
     def find(self, clinic_id: UUID, user_id: UUID) -> ClinicAssignment | None:
         return self.session.scalar(
             select(ClinicAssignment).where(
                 ClinicAssignment.clinic_id == clinic_id, ClinicAssignment.user_id == user_id
             )
         )
+
+    def active_counts_by_user(self, user_ids: Sequence[UUID]) -> dict[UUID, int]:
+        if not user_ids:
+            return {}
+        rows = self.session.execute(
+            select(ClinicAssignment.user_id, func.count())
+            .where(ClinicAssignment.user_id.in_(user_ids), ClinicAssignment.is_active.is_(True))
+            .group_by(ClinicAssignment.user_id)
+        )
+        return {uid: int(n) for uid, n in rows}
