@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.core.enums import PlatformRole, UserStatus
-from app.schemas.common import ApiModel, Email
+from app.schemas.common import ApiModel, Email, PatchModel
 
 
 class UserCreate(ApiModel):
@@ -18,7 +18,9 @@ class UserCreate(ApiModel):
     platform_role: PlatformRole
 
 
-class UserUpdate(ApiModel):
+class UserUpdate(PatchModel):
+    not_null_fields = ("is_active",)
+
     full_name: str | None = Field(default=None, max_length=200)
     phone: str | None = Field(default=None, max_length=32)
     #: false = deactivated: cannot sign in. Their clinics stay allocated until the Admin moves them.

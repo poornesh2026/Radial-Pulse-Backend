@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from app.core.enums import WorkArea, WorkItemPriority, WorkItemStatus
-from app.schemas.common import ApiModel, ShortText
+from app.schemas.common import ApiModel, PatchModel, ShortText
 
 
 class WorkItemCreate(ApiModel):
@@ -36,7 +36,9 @@ class WorkItemCreate(ApiModel):
         return self
 
 
-class WorkItemUpdate(ApiModel):
+class WorkItemUpdate(PatchModel):
+    not_null_fields = ("title", "status", "priority", "area")
+
     title: ShortText | None = None
     description: str | None = Field(default=None, max_length=5000)
     status: WorkItemStatus | None = None

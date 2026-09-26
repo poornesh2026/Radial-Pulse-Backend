@@ -360,3 +360,31 @@ def test_clinic_admin_of_two_branches_sees_both(client, db, world, auth) -> None
         c["name"] for c in client.get("/api/v1/clinics", headers=auth(world.clinic_admin_a)).json()["items"]
     }
     assert names == {world.clinic_a.name, branch.name}
+
+
+def test_removing_a_disabled_login_is_not_blocked_by_last_admin_rule(client, db, world, auth) -> None:  # type: ignore[no-untyped-def]
+    """A Customer clinic with one working admin + one admin whose login is disabled:
+    removing the disabled one is fine (it does not reduce the real number of admins)."""
+    path = _clinic(world)
+    client.post(f"{path}/stage", headers=auth(world.dsm_a), json={"stage": "active_client"})
+    disabled = make_user(db, PlatformRole.CLINIC_USER)
+    add_member(db, world.clinic_a, disabled, ClinicRole.CLINIC_ADMINISTRATOR)
+    disabled.is_active = False
+    db.commit()
+    team = client.get(f"{path}/team", headers=auth(world.dsm_a)).json()
+    row = next(m for m in team if m["user_id"] == str(disabled.id))
+    r = client.patch(f"{path}/team/{row['id']}", headers=auth(world.dsm_a), json={"is_active": False})
+    assert r.status_code == 200, r.text
+
+
+def test_edit_requests_cannot_null_required_fields(client, world, auth) -> None:  # type: ignore[no-untyped-def]
+    """Leaving a field out is fine; sending null for a required one is a clear 422, not a 500."""
+    h = auth(world.dsm_a)
+    path = _clinic(world)
+    assert client.patch(path, headers=h, json={"name": None}).status_code == 422
+    assert client.patch(path, headers=h, json={"phone": None}).status_code == 200  # optional: clears it
+    item = client.post(f"{path}/work-items", headers=h, json={"kind": "k", "title": "t"}).json()
+    r = client.patch(f"{path}/work-items/{item['id']}", headers=h, json={"status": None})
+    assert r.status_code == 422
+    r = client.patch(f"/api/v1/users/{world.dsm_a.id}", headers=auth(world.admin), json={"is_active": None})
+    assert r.status_code == 422

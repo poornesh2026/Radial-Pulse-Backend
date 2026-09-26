@@ -408,7 +408,9 @@ def set_team_member_active(
         return _team_read(membership, user)
     if not is_active and membership.role is ClinicRole.CLINIC_ADMINISTRATOR:
         clinic = get_clinic(session, ctx)
-        if clinic.stage is ClinicStage.ACTIVE_CLIENT and memberships.count_active_admins(clinic.id) <= 1:
+        # Removing someone whose login is already disabled does not reduce the real admin count.
+        remaining = memberships.count_active_admins(clinic.id) - (1 if user.is_active else 0)
+        if clinic.stage is ClinicStage.ACTIVE_CLIENT and remaining < 1:
             raise InvalidStateError("A Customer clinic must keep at least one Clinic Administrator")
     membership.is_active = is_active
     audit.record(
@@ -494,7 +496,7 @@ def set_assignment(
             user_id=target.id,
             clinic_id=clinic_id,
             kind="assignment.new",
-            title=f"New clinic in your portfolio: {clinic.name}",
+            title=f"New clinic in your portfolio: {clinic.name}"[:200],
             link=f"/clinics/{clinic_id}",
         )
     )

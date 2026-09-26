@@ -145,8 +145,9 @@ def test_permission_denied_inside_own_clinic_is_403(client, world, auth) -> None
     h = auth(world.clinic_admin_a)
     a = world.clinic_a.id
     assert client.post(f"/api/v1/clinics/{a}/assessments", headers=h, json={}).status_code == 403
+    # Moving stages is staff work. (Adding other Clinic Administrators IS allowed: decision D14.)
     assert (
-        client.post(f"/api/v1/clinics/{a}/team", headers=h, json={"email": "x@example.test"}).status_code
+        client.post(f"/api/v1/clinics/{a}/stage", headers=h, json={"stage": "client_discussion"}).status_code
         == 403
     )
     assert (

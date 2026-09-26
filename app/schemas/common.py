@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated, Generic, TypeVar
+from typing import Annotated, ClassVar, Generic, Self, TypeVar
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 T = TypeVar("T")
 
@@ -29,6 +29,23 @@ class ApiModel(BaseModel):
     """Base for request/response models: reject unknown fields, read from ORM objects."""
 
     model_config = ConfigDict(from_attributes=True, extra="forbid", str_strip_whitespace=True)
+
+
+class PatchModel(ApiModel):
+    """Base for PATCH bodies: a field may be LEFT OUT, but a required field cannot be set to null.
+
+    List those fields in ``not_null_fields``. Without this, ``{"name": null}`` would reach a
+    NOT NULL column and fail with a 500 instead of a clear 422.
+    """
+
+    not_null_fields: ClassVar[tuple[str, ...]] = ()
+
+    @model_validator(mode="after")
+    def _reject_nulls(self) -> Self:
+        for name in self.not_null_fields:
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
 
 
 class Page(ApiModel, Generic[T]):

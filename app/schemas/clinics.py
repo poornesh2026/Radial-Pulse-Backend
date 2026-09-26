@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import Field, HttpUrl, model_validator
 
 from app.core.enums import ClinicRole, ClinicStage, WorkArea
-from app.schemas.common import ApiModel, Email, ShortText
+from app.schemas.common import ApiModel, Email, PatchModel, ShortText
 
 
 class _Location(ApiModel):
@@ -40,8 +40,10 @@ class ClinicCreate(_Location):
         return self
 
 
-class ClinicUpdate(_Location):
+class ClinicUpdate(_Location, PatchModel):
     """Edit clinic details. Stage and archiving have their own routes."""
+
+    not_null_fields = ("name",)
 
     name: ShortText | None = None
     specialty: str | None = Field(default=None, max_length=200)
@@ -135,7 +137,9 @@ class PractitionerCreate(ApiModel):
     user_id: UUID | None = None
 
 
-class PractitionerUpdate(ApiModel):
+class PractitionerUpdate(PatchModel):
+    not_null_fields = ("full_name", "is_primary", "is_active")
+
     full_name: ShortText | None = None
     specialty: str | None = Field(default=None, max_length=120)
     qualifications: str | None = Field(default=None, max_length=300)
