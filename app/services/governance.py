@@ -19,18 +19,24 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.enums import ApprovalAction, ApprovalState, AssessmentStatus, PublicationState
+from app.core.enums import (
+    ApprovalAction,
+    ApprovalState,
+    AssessmentStatus,
+    NotificationCategory,
+    PublicationState,
+)
 from app.core.errors import DomainValidationError, ForbiddenError, InvalidStateError, NotFoundError
 from app.core.rbac import ClinicContext, Permission
 from app.db.base import utcnow
-from app.models import Approval, Assessment, Notification
+from app.models import Approval, Assessment
 from app.repositories.assessments import AssessmentRepository
 from app.repositories.assets import AssetRepository
 from app.repositories.governance import ApprovalRepository, AuditEventRepository
 from app.repositories.reporting import ReportRepository
 from app.repositories.users import UserRepository
 from app.schemas.governance import ApprovalActionRequest
-from app.services import audit
+from app.services import audit, notify
 from app.services.identity import build_principal
 
 # ------------------------------------------------------------- state machine
@@ -216,14 +222,14 @@ def _handoff(session: Session, ctx: ClinicContext, approval: Approval, assignee_
     if not build_principal(session, assignee).can_access_clinic(ctx.clinic_id):
         raise DomainValidationError("Assignee has no access to this clinic")
     approval.assignee_user_id = assignee.id
-    session.add(
-        Notification(
-            user_id=assignee.id,
-            clinic_id=ctx.clinic_id,
-            kind="approval.handoff",
-            title="An item was handed to you for review",
-            link=f"/clinics/{ctx.clinic_id}/approvals/{approval.id}",
-        )
+    notify.send(
+        session,
+        user_id=assignee.id,
+        category=NotificationCategory.APPROVAL_HANDOFF,
+        clinic_id=ctx.clinic_id,
+        kind="approval.handoff",
+        title="An item was handed to you for review",
+        link=f"/clinics/{ctx.clinic_id}/approvals/{approval.id}",
     )
 
 

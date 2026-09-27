@@ -121,3 +121,18 @@ def test_service_principal_is_scoped_to_one_clinic() -> None:
 def test_clinic_permission_requires_clinic_id() -> None:
     with pytest.raises(ValueError):
         principal(PlatformRole.CLINIC_USER).has(Permission.CLINICS_READ)
+
+
+def test_chat_and_connected_accounts_permissions() -> None:
+    """Decision D18: Clinic Administrators chat and connect accounts; Team Members only read."""
+    admin = principal(PlatformRole.CLINIC_USER, clinic_roles={A: ClinicRole.CLINIC_ADMINISTRATOR})
+    staff = principal(PlatformRole.CLINIC_USER, clinic_roles={A: ClinicRole.CLINIC_TEAM_MEMBER})
+    dsm = principal(PlatformRole.DIGITAL_SUCCESS_MANAGER, assigned_clinic_ids=frozenset({A}))
+    for p in (admin, dsm):
+        for perm in (Permission.CHAT_READ, Permission.CHAT_WRITE, Permission.CONNECTIONS_MANAGE):
+            assert p.has(perm, A)
+    assert staff.has(Permission.CHAT_READ, A) and staff.has(Permission.CONNECTIONS_READ, A)
+    assert not staff.has(Permission.CHAT_WRITE, A) and not staff.has(Permission.CONNECTIONS_MANAGE, A)
+    # Platform settings: Platform Administrators only.
+    assert principal(PlatformRole.PLATFORM_ADMINISTRATOR).has(Permission.SETTINGS_MANAGE)
+    assert not dsm.has(Permission.SETTINGS_MANAGE)

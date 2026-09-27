@@ -5,7 +5,7 @@ Roles (docs/architecture/multi-tenancy.md):
     Platform Administrator   platform_role = platform_administrator   every clinic
     Digital Success Manager  platform_role = digital_success_manager  assigned clinics only
     Clinic Administrator     clinic membership role = clinic_administrator   own clinic(s) only
-    (Clinic Team Member)     reserved — no permissions yet
+    Clinic Team Member       clinic membership role = clinic_team_member     own clinic(s), mostly view-only
 
 There is no other way to reach a clinic. Frontends may use the permission list to
 hide buttons; only this module (through `app.dependencies.tenancy`) decides access.
@@ -28,6 +28,8 @@ class Permission(StrEnum):
     USERS_READ = "users:read"
     USERS_MANAGE = "users:manage"
     ASSIGNMENTS_MANAGE = "assignments:manage"
+    #: Change platform-wide settings (organization name, support email, timezone). Admin only.
+    SETTINGS_MANAGE = "settings:manage"
     # ---- clinic-scoped ----
     CLINICS_READ = "clinics:read"
     CLINICS_WRITE = "clinics:write"
@@ -56,12 +58,18 @@ class Permission(StrEnum):
     SNAPSHOTS_READ = "snapshots:read"
     SNAPSHOTS_WRITE = "snapshots:write"
     AUDIT_LOG_READ = "audit_log:read"
+    #: Client Collaboration: read / send messages in the clinic's chat.
+    CHAT_READ = "chat:read"
+    CHAT_WRITE = "chat:write"
+    #: Connected accounts (Instagram, Google Business Profile, ...): see / connect or disconnect.
+    CONNECTIONS_READ = "connections:read"
+    CONNECTIONS_MANAGE = "connections:manage"
 
 
 P = Permission
 
 GLOBAL_PERMISSIONS: frozenset[Permission] = frozenset(
-    {P.CLINICS_CREATE, P.USERS_READ, P.USERS_MANAGE, P.ASSIGNMENTS_MANAGE}
+    {P.CLINICS_CREATE, P.USERS_READ, P.USERS_MANAGE, P.ASSIGNMENTS_MANAGE, P.SETTINGS_MANAGE}
 )
 CLINIC_PERMISSIONS: frozenset[Permission] = frozenset(set(Permission) - GLOBAL_PERMISSIONS)
 #: Permissions no human role ever receives (machine-only).
@@ -96,6 +104,8 @@ DIGITAL_SUCCESS_MANAGER_CLINIC_PERMISSIONS: frozenset[Permission] = frozenset(
         P.WORK_ITEMS_READ, P.WORK_ITEMS_WRITE,
         P.SNAPSHOTS_READ, P.SNAPSHOTS_WRITE,
         P.AUDIT_LOG_READ,
+        P.CHAT_READ, P.CHAT_WRITE,
+        P.CONNECTIONS_READ, P.CONNECTIONS_MANAGE,
     }
 )  # fmt: skip
 
@@ -123,6 +133,11 @@ CLINIC_ROLE_PERMISSIONS: Mapping[ClinicRole, frozenset[Permission]] = {
             P.WORK_ITEMS_READ,
             P.SNAPSHOTS_READ,
             P.AUDIT_LOG_READ,
+            P.CHAT_READ,
+            P.CHAT_WRITE,
+            #: "Connect Your Accounts" on the mobile app.
+            P.CONNECTIONS_READ,
+            P.CONNECTIONS_MANAGE,
         }
     ),
     #: Clinic staff (front desk, manager…). Mostly VIEW-ONLY inside their own clinic, plus
@@ -140,6 +155,9 @@ CLINIC_ROLE_PERMISSIONS: Mapping[ClinicRole, frozenset[Permission]] = {
             P.REPORTS_READ,  # published only
             P.WORK_ITEMS_READ,
             P.SNAPSHOTS_READ,
+            #: Reads the clinic chat; only Clinic Administrators and staff send (decision D18).
+            P.CHAT_READ,
+            P.CONNECTIONS_READ,
         }
     ),
 }

@@ -1,7 +1,64 @@
-# services/api — Radial Pulse platform API
+# Radial Pulse — Backend (API + worker)
 
-Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic · Pydantic 2 · PostgreSQL (Aurora in AWS).
-Owner: **Person 1**. Nx project name: `api` (tags `type:service`, `scope:api`).
+Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic · Pydantic 2 · PostgreSQL 16 (Aurora in AWS) · Cognito.
+Owner: **Person 1 (Backend / Data)**. The frontend (web + mobile) lives in its own repo and uses
+the **API contract** this repo publishes.
+
+```
+radial-pulse-backend/
+├── app/                  the API and the background worker (one image)
+├── alembic/              database migrations (0001 … 0010)
+├── tests/                fast tests (SQLite) + integration tests (PostgreSQL, row-level security)
+├── openapi/
+│   ├── openapi.json      THE CONTRACT with the frontend (generated — never edit by hand)
+│   └── CHANGELOG.md      what changed for the screens, per contract version
+├── docs/                 architecture, database schema, API guides, AWS notes
+├── scripts/db/           local database roles
+├── docker-compose.yml    local PostgreSQL (+ API + worker)
+└── Makefile              every command (make help)
+```
+
+## First time on your machine
+
+```bash
+# needs: Python 3.12, uv (https://docs.astral.sh/uv/), Docker
+make install                 # Python packages into .venv
+cp .env.example .env         # local settings (git-ignored)
+make db                      # local PostgreSQL 16 in Docker
+make migrate                 # build the tables
+make create-admin EMAIL=you@example.com NAME="You"   # first Platform Administrator
+make dev                     # http://localhost:8000/docs
+make worker                  # background jobs (second terminal)
+```
+
+## Every day
+
+```bash
+make check                   # lint + format + types + fast tests + contract up to date
+make integration-test        # full suite on PostgreSQL (after `make db`; set TEST_DATABASE_URL)
+make migration NAME="add x"  # new migration after changing models — READ the generated file
+make openapi                 # regenerate the contract after changing routes/schemas
+```
+
+## The API contract (how the frontend gets it)
+
+1. Change routes or schemas → `make openapi` → bump `CONTRACT_VERSION` in
+   `app/core/contract.py` → add a `## vX.Y.Z` section to `openapi/CHANGELOG.md` → pull request.
+   CI fails if `openapi.json` is stale or the version was not bumped.
+2. After merging: `git tag vX.Y.Z && git push origin vX.Y.Z`. GitHub Actions creates the
+   release **"API contract vX.Y.Z"** with `openapi.json` attached.
+3. The frontend runs its `api:sync` (see [docs/api/for-frontend.md](docs/api/for-frontend.md)).
+
+Rules for version numbers: [docs/api/contract-versioning.md](docs/api/contract-versioning.md).
+
+## Deploying
+
+| Where | How |
+|---|---|
+| DEV | automatically after CI passes on `main` |
+| PROD | Actions → **Deploy PROD** → Run workflow with a tag, then a reviewer approves |
+
+A tag publishes the contract only; it never deploys PROD by itself.
 
 ## Layers (one direction only)
 
@@ -11,66 +68,27 @@ routers  →  services  →  repositories  →  models
 schemas     core (config, security, rbac, errors, logging)
 ```
 
-| Folder          | Job                                                                   | Must NOT                          |
-| --------------- | --------------------------------------------------------------------- | --------------------------------- |
-| `api/v1/routers`| HTTP: parse input, call one service function, shape the response      | query the DB, hold business rules |
-| `schemas`       | Pydantic request/response models (the API contract)                   | import models' sessions           |
-| `services`      | Business rules, audit events, commit                                  | import FastAPI                    |
-| `repositories`  | All SQL. Clinic-scoped reads always take `clinic_id`                  | contain business rules            |
-| `models`        | SQLAlchemy tables                                                     | contain request logic             |
-| `dependencies`  | DB session, auth (`get_principal`), tenancy (`clinic_access`)         |                                   |
-| `core`          | settings, JWT verification, RBAC, error types, logging                |                                   |
-| `integrations`  | S3, Cognito userInfo (behind small Protocols)                         |                                   |
-| `assessments`   | Engine contract (`engines.py`) + placeholder scoring                  | contain SEO/GBP/social logic      |
-| `jobs`          | Job queue backends (SQS / database poll / in-memory) + message v1     | carry data or tokens in messages  |
-| `worker`        | `python -m app.worker`: receive → claim → run handler → retry/fail    | import FastAPI or routers         |
-| `db/tenant.py`  | Hands the allowed clinic ids to PostgreSQL row-level security         |                                   |
-| `middleware`    | request id + access log, security headers                             |                                   |
+| Folder | Job | Must NOT |
+|---|---|---|
+| `api/v1/routers` | HTTP: parse input, call one service function, shape the response | query the DB, hold business rules |
+| `schemas` | Pydantic request/response models (the API contract) | import sessions |
+| `services` | Business rules, audit events, commit | import FastAPI |
+| `repositories` | All SQL. Clinic-scoped reads always take `clinic_id` | contain business rules |
+| `models` | SQLAlchemy tables | contain request logic |
+| `dependencies` | DB session, auth (`get_principal`), tenancy (`clinic_access`) | |
+| `integrations` | S3, Cognito, SES, Secrets Manager, OAuth (behind small Protocols) | |
+| `worker`, `jobs` | background jobs (SQS in AWS, database polling locally) | import FastAPI |
 
 ## Tenant isolation — the one rule
 
-Every route under `/clinics/{clinic_id}/…` depends on `clinic_access(Permission.X)`.
-No access to the clinic → **404**. Access but missing permission → **403**.
-Repositories filter every clinic-scoped query by `clinic_id`, so an id from another
-clinic returns nothing. `tests/api/test_tenant_isolation.py` proves it for every
-route — **add your new route to that file**.
+Every route under `/clinics/{clinic_id}/…` depends on `clinic_access(Permission.X)`:
+no access → **404**, access but missing permission → **403**. PostgreSQL **row-level security**
+is the second net on **every** table (`tests/integration/test_rls.py` fails if a table has none).
 
-PostgreSQL **row-level security** is the second net: the API and worker log in as members
-of the non-owner `radial_app` role, and `clinic_access` narrows the transaction to the one
-clinic. **A new table with `clinic_id` needs an RLS policy in its migration** (copy 0004);
-`tests/integration/test_rls.py` fails otherwise.
+## More
 
-## Commands (run from the repo root)
-
-```bash
-pnpm nx run api:install            # uv sync (creates .venv)
-docker compose up -d postgres      # local PostgreSQL 16
-pnpm nx run api:migrate            # alembic upgrade head
-pnpm nx run api:dev                # http://localhost:8000/docs
-pnpm nx run api:worker             # background worker (JOB_QUEUE_BACKEND=database locally)
-pnpm nx run api:create-admin --email=you@example.com --name="You"   # first Platform Administrator
-pnpm nx run api:test               # fast tests (SQLite)
-pnpm nx run api:integration-test   # full suite on PostgreSQL (needs TEST_DATABASE_URL)
-pnpm nx run api:lint               # ruff
-pnpm nx run api:typecheck          # mypy --strict
-pnpm nx run api:openapi            # writes packages/api-client/openapi/openapi.json
-pnpm nx run api:migration --name="add consent source"   # new Alembic revision
-```
-
-## Migrations
-
-1. Change models in `app/models/`.
-2. `pnpm nx run api:migration --name="short description"` (autogenerate against a DB at head).
-3. **Read the generated file.** Autogenerate misses things (data moves, triggers, renames).
-4. `pnpm nx run api:integration-test` — `test_migrations_match_models` fails if models and migrations drift.
-5. Migrations must be backwards-compatible with the previous app version (expand → migrate → contract),
-   because the deploy runs migrations before the new containers start.
-6. Migrations run as the database **owner** (`MIGRATION_DATABASE_URL`); the app runs as
-   `radial_app` (`DATABASE_URL`). New clinic tables: add RLS. Changed stored values
-   (roles, statuses): write a data mapping and a downgrade (see 0002).
-
-## Auth in local development
-
-There is **no auth bypass**. Point `COGNITO_*` at the DEV user pool and sign in through the
-web app, or call `/health` and `/docs` without auth. Tests use real JWT verification
-with a throwaway RSA key.
+- Architecture and decisions: [docs/architecture](docs/architecture) (start with `database-schema-simple.md`)
+- All routes and who may call them: [docs/api/milestone1-api.md](docs/api/milestone1-api.md)
+- Chat, connected accounts, settings: [docs/architecture/chat-connections-settings.md](docs/architecture/chat-connections-settings.md)
+- AWS changes Person 3 needs for this repo: [docs/infrastructure/backend-repo-aws-changes.md](docs/infrastructure/backend-repo-aws-changes.md)
+- Rules for AI coding agents: [AGENTS.md](AGENTS.md)

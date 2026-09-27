@@ -24,12 +24,29 @@ class SnapshotRepository(Repository):
         source: DataSource | None,
         limit: int,
         offset: int,
+        latest: bool = False,
     ) -> tuple[list[Any], int]:
         stmt = select(MetricSnapshot).where(MetricSnapshot.clinic_id == clinic_id)
         if metric_key is not None:
             stmt = stmt.where(MetricSnapshot.metric_key == metric_key)
         if source is not None:
             stmt = stmt.where(MetricSnapshot.source == source)
+        if latest:
+            # Only the newest value of each metric (e.g. the numbers on the Social Media cards).
+            newest = (
+                select(
+                    MetricSnapshot.id.label("snapshot_id"),
+                    func.row_number()
+                    .over(
+                        partition_by=MetricSnapshot.metric_key,
+                        order_by=(MetricSnapshot.fetched_at.desc(), MetricSnapshot.id.desc()),
+                    )
+                    .label("rn"),
+                )
+                .where(MetricSnapshot.clinic_id == clinic_id)
+                .subquery()
+            )
+            stmt = stmt.join(newest, (newest.c.snapshot_id == MetricSnapshot.id) & (newest.c.rn == 1))
         return self.paginate(
             stmt.order_by(MetricSnapshot.fetched_at.desc(), MetricSnapshot.id), limit, offset
         )

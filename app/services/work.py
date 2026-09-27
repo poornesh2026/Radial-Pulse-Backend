@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.enums import WorkArea, WorkItemStatus
+from app.core.enums import NotificationCategory, WorkArea, WorkItemStatus
 from app.core.errors import ConflictError, DomainValidationError, NotFoundError
 from app.core.rbac import Actor, ClinicContext, Principal
 from app.db.base import utcnow
@@ -18,7 +18,7 @@ from app.repositories.governance import ApprovalRepository
 from app.repositories.users import UserRepository
 from app.repositories.work import NotificationRepository, WorkItemRepository
 from app.schemas.work import WorkItemCreate, WorkItemUpdate
-from app.services import audit
+from app.services import audit, notify
 from app.services.identity import build_principal
 
 
@@ -36,14 +36,14 @@ def _check_owner(session: Session, clinic_id: UUID, owner_user_id: UUID | None) 
 
 def _notify_owner(session: Session, item: WorkItem, actor: Actor) -> None:
     if item.owner_user_id and item.owner_user_id != actor.user_id:
-        session.add(
-            Notification(
-                user_id=item.owner_user_id,
-                clinic_id=item.clinic_id,
-                kind="work_item.assigned",
-                title=f"Assigned to you: {item.title}",
-                link=f"/clinics/{item.clinic_id}/work-items/{item.id}",
-            )
+        notify.send(
+            session,
+            user_id=item.owner_user_id,
+            category=NotificationCategory.WORK_ITEM_ASSIGNED,
+            clinic_id=item.clinic_id,
+            kind="work_item.assigned",
+            title=f"Assigned to you: {item.title}",
+            link=f"/clinics/{item.clinic_id}/work-items/{item.id}",
         )
 
 

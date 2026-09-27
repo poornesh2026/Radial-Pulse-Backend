@@ -33,10 +33,11 @@ def ingest(
 def list_snapshots(
     metric_key: str | None = Query(default=None, max_length=128),
     source: DataSource | None = Query(default=None),
+    latest: bool = Query(default=False, description="Only the newest value of each metric"),
     limit: Limit = 50,
     offset: Offset = 0,
     ctx: ClinicContext = Depends(clinic_access(Permission.SNAPSHOTS_READ)),
     db: Session = Depends(get_db),
 ) -> Page[MetricSnapshotRead]:
-    items, total = service.list_snapshots(db, ctx, metric_key, source, limit, offset)
+    items, total = service.list_snapshots(db, ctx, metric_key, source, limit, offset, latest=latest)
     return Page[MetricSnapshotRead](items=items, total=total, limit=limit, offset=offset)

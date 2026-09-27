@@ -234,7 +234,7 @@ Unchanged routes. New rules: a Clinic Administrator **cannot** approve, reject o
 
 ---
 
-## 5. Every route (full list, 52)
+## 5. Every route (full list, 69 — contract v0.1.0)
 
 All paths are under `/api/v1`. `{id}` is the clinic id.
 For any `/clinics/{id}/…` route: **no access to the clinic → 404**, **access but missing
@@ -294,6 +294,23 @@ permission → 403**.
 | POST | `/users` | `users:manage` |  |
 | PATCH | `/users/{user_id}` | `users:manage` | Edit or deactivate a user |
 | POST | `/users/{user_id}/resend-invite` | `users:manage` |  |
+| POST | `/auth/me/avatar/uploads` | signed in | Profile photo step 1: upload address |
+| POST | `/auth/me/avatar/confirm` | signed in | Profile photo step 2: use it |
+| DELETE | `/auth/me/avatar` | signed in | Remove my photo |
+| GET | `/auth/me/notification-settings` | signed in | My notification switches |
+| PUT | `/auth/me/notification-settings` | signed in | Change some switches |
+| GET | `/settings/platform` | signed in | Organization name, support contact, timezone, date format |
+| PATCH | `/settings/platform` | `settings:manage` (Admin) | Change them |
+| GET | `/settings/integrations` | `settings:manage` (Admin) | Which outside services are set up |
+| GET | `/chat/inbox` | signed in | My chats with unread counts |
+| GET | `/clinics/{id}/chat/messages` | `chat:read` | Messages (oldest first); `before` / `after` for paging and polling |
+| POST | `/clinics/{id}/chat/messages` | `chat:write` | Send text and/or one attachment |
+| POST | `/clinics/{id}/chat/read` | `chat:read` | Mark read |
+| GET | `/clinics/{id}/connections` | `connections:read` | Every platform with its status |
+| GET | `/clinics/{id}/connections/{platform}` | `connections:read` | One platform |
+| POST | `/clinics/{id}/connections/{platform}/start` | `connections:manage` | Start Connect (returns the sign-in address) |
+| POST | `/clinics/{id}/connections/{platform}/complete` | `connections:manage` | Finish Connect with code + state |
+| POST | `/clinics/{id}/connections/{platform}/disconnect` | `connections:manage` | Disconnect, delete the stored tokens |
 
 ## 6. Who has which permission
 
@@ -315,6 +332,11 @@ permission → 403**.
 | `reports:write`, `snapshots:write`, `work_items:write` | ✅ | ✅ | — | — |
 | `work_items:read`, `snapshots:read` | ✅ | ✅ | ✅ | ✅ |
 | `audit_log:read` (activity log) | ✅ | ✅ | ✅ | — |
+| `chat:read` | ✅ | ✅ | ✅ | ✅ |
+| `chat:write` | ✅ | ✅ | ✅ | — (decision D18) |
+| `connections:read` | ✅ | ✅ | ✅ | ✅ |
+| `connections:manage` | ✅ | ✅ | ✅ | — |
+| `settings:manage` (platform settings, integrations) | ✅ | — | — | — |
 
 Frontends get the caller's exact permissions from `GET /auth/me`. Use them to show or hide
 buttons only; the API always checks again.
@@ -333,3 +355,16 @@ buttons only; the API always checks again.
 
 Nothing was removed or renamed. Regenerate the typed client after pulling (`value_number` and
 `practitioner_id` are new fields).
+
+---
+
+## 8. Contract v0.1.0 (27 Sep): chat, connected accounts, settings
+
+The first versioned contract. How the screens use the new routes (polling, the Connect flow,
+the photo upload): [for-frontend.md](for-frontend.md). Other changes:
+
+- `GET /auth/me` adds `avatar_url`, `sign_in_method` (`google`), `last_login_at`.
+- `GET /clinics/{id}/snapshots?latest=true` returns only the newest value of each metric.
+- Asset kind `chat_attachment` (images and PDFs).
+- `GET /health` adds `contract_version`.
+- New error codes: **502** (a platform refused the Connect), **503** (that platform is not set up yet).

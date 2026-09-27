@@ -32,11 +32,20 @@ from app.core.config import Settings
 from app.core.security import CognitoTokenVerifier
 from app.db.base import Base
 from app.db.session import get_engine
-from app.dependencies.adapters import get_invite_sender, get_job_queue, get_storage, settings_dependency
+from app.dependencies.adapters import (
+    get_invite_sender,
+    get_job_queue,
+    get_oauth_client,
+    get_optional_storage,
+    get_secret_store,
+    get_storage,
+    settings_dependency,
+)
 from app.dependencies.auth import get_token_verifier, get_userinfo_client
 from app.dependencies.db import get_db
 from app.integrations.cognito import UserInfo
 from app.integrations.invites import Invite
+from app.integrations.oauth import OAuthError, OAuthProvider, TokenSet
 from app.integrations.storage import ObjectInfo
 from app.jobs.queue import InMemoryJobQueue
 from app.main import create_app
@@ -147,6 +156,55 @@ class RecordingInvites:
         self.sent.append(invite)
 
 
+OAUTH_REDIRECT = "http://localhost:5173/connections/callback"
+
+
+@dataclass
+class InMemorySecretStore:
+    """Test double for AWS Secrets Manager."""
+
+    secrets: dict[str, dict[str, Any]] = field(default_factory=dict)
+    deleted: list[str] = field(default_factory=list)
+
+    def save(self, name: str, value: dict[str, Any]) -> str:
+        self.secrets[name] = value
+        return f"arn:aws:secretsmanager:ap-south-1:000000000000:secret:{name}"
+
+    def delete(self, ref: str) -> None:
+        self.deleted.append(ref)
+        self.secrets.pop(ref.split(":secret:", 1)[-1], None)
+
+
+@dataclass
+class FakeOAuthClient:
+    """Test double for the platforms' token endpoints. Records calls; ``fail`` makes it refuse."""
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    fail: bool = False
+
+    def exchange_code(
+        self,
+        provider: OAuthProvider,
+        *,
+        code: str,
+        redirect_uri: str,
+        code_verifier: str | None,
+        scopes: list[str],
+    ) -> TokenSet:
+        self.calls.append(
+            {"provider": provider.key, "code": code, "redirect_uri": redirect_uri, "verifier": code_verifier}
+        )
+        if self.fail:
+            raise OAuthError(f"{provider.key} refused the sign-in (HTTP 400)")
+        return TokenSet(
+            access_token=f"access-{code}",
+            refresh_token=f"refresh-{code}",
+            token_type="Bearer",
+            scopes=scopes,
+            expires_at=None,
+        )
+
+
 # --------------------------------------------------------------------- database
 def _sqlite_engine() -> Engine:
     engine = create_engine(
@@ -217,6 +275,13 @@ def engines(postgres_engines: tuple[Engine, Engine] | None) -> Iterator[tuple[En
     tables = ", ".join(t.name for t in reversed(Base.metadata.sorted_tables))
     with owner.begin() as conn:
         conn.execute(text(f"TRUNCATE {tables} CASCADE"))
+        # The one platform_settings row is created by migration 0010; put it back.
+        conn.execute(
+            text(
+                "INSERT INTO platform_settings (id, organization_name, timezone, date_format) "
+                "VALUES (1, 'Radial Pulse', 'Asia/Kolkata', 'DD MMM YYYY')"
+            )
+        )
 
 
 @pytest.fixture
@@ -253,6 +318,12 @@ def settings() -> Settings:
         max_upload_bytes=10 * 1024 * 1024,
         cors_allowed_origins=["http://localhost:5173"],
         job_queue_backend="memory",
+        # Connected accounts: Google and Meta "set up", LinkedIn and X not (fake credentials).
+        oauth_redirect_uris=[OAUTH_REDIRECT],
+        google_oauth_client_id="google-client",
+        google_oauth_client_secret="google-secret",
+        meta_app_id="meta-app",
+        meta_app_secret="meta-secret",
     )
 
 
@@ -264,6 +335,16 @@ def storage() -> InMemoryStorage:
 @pytest.fixture
 def job_queue() -> InMemoryJobQueue:
     return InMemoryJobQueue()
+
+
+@pytest.fixture
+def secret_store() -> InMemorySecretStore:
+    return InMemorySecretStore()
+
+
+@pytest.fixture
+def oauth_client() -> FakeOAuthClient:
+    return FakeOAuthClient()
 
 
 @pytest.fixture
@@ -286,6 +367,8 @@ def client(
     userinfo: FakeUserInfo,
     job_queue: InMemoryJobQueue,
     invites: RecordingInvites,
+    secret_store: InMemorySecretStore,
+    oauth_client: FakeOAuthClient,
 ) -> Iterator[TestClient]:
     application = create_app(settings)
 
@@ -303,6 +386,9 @@ def client(
             get_token_verifier: lambda: verifier,
             get_userinfo_client: lambda: userinfo,
             get_storage: lambda: storage,
+            get_optional_storage: lambda: storage,
+            get_secret_store: lambda: secret_store,
+            get_oauth_client: lambda: oauth_client,
             get_job_queue: lambda: job_queue,
             get_invite_sender: lambda: invites,
             settings_dependency: lambda: settings,

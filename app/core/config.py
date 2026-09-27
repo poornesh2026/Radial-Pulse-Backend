@@ -102,8 +102,28 @@ class Settings(BaseSettings):
     archive_metrics_after_days: int = Field(default=180, ge=30)
     archive_audit_after_days: int = Field(default=365, ge=90)
 
+    # ------------------------------------------------------- connected accounts (OAuth)
+    #: Frontend addresses the platforms may send the clinic back to after "Connect"
+    #: (comma-separated; each must also be registered with the platform). Anything else is refused.
+    oauth_redirect_uris: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    #: How long a started "Connect" stays valid.
+    oauth_state_ttl_seconds: int = Field(default=600, ge=60, le=3600)
+    #: Each platform's app credentials. Empty = that platform shows "not set up yet".
+    #: The secrets come from Secrets Manager (ECS injects them); never put them in .env files you share.
+    google_oauth_client_id: str | None = None
+    google_oauth_client_secret: SecretStr | None = None
+    meta_app_id: str | None = None
+    meta_app_secret: SecretStr | None = None
+    linkedin_client_id: str | None = None
+    linkedin_client_secret: SecretStr | None = None
+    x_client_id: str | None = None
+    x_client_secret: SecretStr | None = None
+    #: Tokens are saved as Secrets Manager secrets named <prefix>/<env>/connections/<clinic>/<platform>.
+    connection_secrets_prefix: str = "radial-pulse"
+    connection_secrets_kms_key_id: str | None = None
+
     # --------------------------------------------------------------- validators
-    @field_validator("cors_allowed_origins", "cognito_app_client_ids", mode="before")
+    @field_validator("cors_allowed_origins", "cognito_app_client_ids", "oauth_redirect_uris", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):
@@ -121,6 +141,8 @@ class Settings(BaseSettings):
                 raise ValueError("Prod CORS origins must be https")
             if self.db_sslmode not in ("require", "verify-full"):
                 raise ValueError("Prod database connections must use TLS (DB_SSLMODE=require|verify-full)")
+            if any(uri.startswith("http://") for uri in self.oauth_redirect_uris):
+                raise ValueError("Prod OAuth redirect addresses must be https (or the mobile app's scheme)")
         if self.app_env in ("dev", "prod") and not self.auth_configured:
             raise ValueError("COGNITO_REGION, COGNITO_USER_POOL_ID and COGNITO_APP_CLIENT_IDS are required")
         if self.job_queue_backend == "sqs" and not self.job_queue_url:

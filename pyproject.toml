@@ -16,6 +16,8 @@ dependencies = [
   "pyjwt[crypto]>=2.10",
   "httpx>=0.28",
   "boto3>=1.38",
+  # Timezone names for Settings → General (slim Docker images have no system tz database).
+  "tzdata>=2025.2",
 ]
 
 [dependency-groups]

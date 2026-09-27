@@ -26,6 +26,9 @@ CLINIC_SCOPED_GETS = [
     "/api/v1/clinics/{cid}/reports",
     "/api/v1/clinics/{cid}/presence-profiles",
     "/api/v1/clinics/{cid}/assessments",
+    "/api/v1/clinics/{cid}/chat/messages",
+    "/api/v1/clinics/{cid}/connections",
+    "/api/v1/clinics/{cid}/connections/instagram",
 ]
 
 

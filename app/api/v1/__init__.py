@@ -13,12 +13,14 @@ from app.api.v1.routers import (
     auth,
     chat,
     clinics,
+    connections,
     dashboard,
     notifications,
     practitioners,
     presence,
     profiles,
     reports,
+    settings,
     snapshots,
     users,
     work_items,
@@ -43,5 +45,8 @@ for module in (
     snapshots,
     reports,
     chat,
+    connections,
+    settings,
 ):
     api_router.include_router(module.router)
+api_router.include_router(chat.inbox_router)

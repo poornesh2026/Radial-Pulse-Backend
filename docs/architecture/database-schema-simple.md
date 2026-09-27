@@ -319,9 +319,64 @@ Nothing is lost — the archive can still be searched.
 8. **Every action is logged**, and the log cannot be changed.
 9. **Old data goes to the archive (S3)** every month: numbers after 6 months, the log after 1 year.
 10. **Search is fast and safe.** Typing `100%` finds "100% Smile", not every clinic starting with 100.
+11. **Chat messages are never changed or deleted**, and each clinic's chat is locked to that clinic.
+12. **Login keys for Instagram, Google, etc. are never in the database** — only in AWS Secrets Manager.
 
 ---
 
-## 10. Count
+## 10. Chat, connected accounts and settings (new)
 
-**22 tables**: 20 were already built, 2 are new (`clinic_stage_history`, `clinic_practitioners`).
+### `chat_messages` — the clinic chat
+
+One chat per clinic, between the clinic and our team (the DSM, or the Admin).
+
+| Column | What it means | Example |
+|---|---|---|
+| clinic_id | which clinic's chat | Smile Dental Care |
+| sender_name | who wrote it (saved with the message) | Priya |
+| sender_side | our team or the clinic (left or right bubble) | radial_pulse |
+| body | the text | "Your report is ready" |
+| attachment_asset_id | a photo or PDF (the file is in S3) | report.pdf |
+| created_at | when | 27 Sep, 3 pm |
+
+Messages are **never edited or deleted**. The log records *that* a message was sent, not the text.
+Clinic Team Members can read the chat but not write.
+
+### `chat_read_states` — "I have read up to here"
+
+One row per person per clinic. It gives the **unread** numbers (the "Unread Chats (3)" tile).
+
+### `platform_connections` — the clinic's connected accounts
+
+When the clinic presses **Connect** for Instagram, Facebook, Google Business Profile, YouTube,
+LinkedIn or X and allows access, we keep one row here.
+
+| Column | What it means | Example |
+|---|---|---|
+| clinic_id, platform | which clinic, which platform | Smile Dental Care, instagram |
+| status | where it stands | not connected / waiting / **connected** / needs reconnect / disconnected |
+| connected_by, connected_at | who connected it, when | Dr. Rahul, 27 Sep |
+| secret_ref | **where** the login key is kept (AWS Secrets Manager) | arn:aws:secretsmanager:… |
+
+**The login keys (tokens) are never in the database** — only in AWS Secrets Manager, locked.
+We only ask for permission to **read** (followers, reviews, insights), never to post.
+
+### `platform_settings` — Admin → Settings → General
+
+Exactly **one row**: organization name, support email and phone, timezone (India), date format.
+Everyone can read it; only the Platform Administrator can change it.
+
+### `notification_preferences` — my notification switches
+
+One row for each switch a person changed ("don't notify me when a work item is given to me").
+No row = switched on. Only you can see your own switches.
+
+Also new: `users.avatar_key` (your profile photo in S3).
+
+---
+
+## 11. Count
+
+**27 tables**: 20 were already built, 7 are new (`clinic_stage_history`, `clinic_practitioners`,
+`chat_messages`, `chat_read_states`, `platform_connections`, `platform_settings`,
+`notification_preferences`).

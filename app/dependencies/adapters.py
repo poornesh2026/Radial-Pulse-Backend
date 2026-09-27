@@ -5,6 +5,8 @@ from functools import lru_cache
 from app.core.config import Settings, get_settings
 from app.core.errors import ServiceUnavailableError
 from app.integrations.invites import InviteSender, LoggingInviteSender, SesInviteSender
+from app.integrations.oauth import HttpxOAuthClient, OAuthClient
+from app.integrations.secrets import AwsSecretStore, SecretStore
 from app.integrations.storage import ObjectStorage, S3ObjectStorage
 from app.jobs.queue import DatabaseJobQueue, JobQueue, SqsJobQueue
 
@@ -19,6 +21,13 @@ def get_storage() -> ObjectStorage:
     if not settings.s3_assets_bucket:
         raise ServiceUnavailableError("Asset storage is not configured (S3_ASSETS_BUCKET)")
     return S3ObjectStorage(bucket=settings.s3_assets_bucket, region=settings.aws_region)
+
+
+def get_optional_storage() -> ObjectStorage | None:
+    """Storage when it is set up, else None (for screens that work without it, like /auth/me)."""
+    if not get_settings().s3_assets_bucket:
+        return None
+    return get_storage()
 
 
 @lru_cache
@@ -37,3 +46,14 @@ def get_invite_sender() -> InviteSender:
     if settings.invite_email_backend == "ses" and settings.invite_from_email:
         return SesInviteSender(settings.invite_from_email, settings.aws_region)
     return LoggingInviteSender()
+
+
+@lru_cache
+def get_secret_store() -> SecretStore:
+    settings = get_settings()
+    return AwsSecretStore(settings.aws_region, settings.connection_secrets_kms_key_id)
+
+
+@lru_cache
+def get_oauth_client() -> OAuthClient:
+    return HttpxOAuthClient()

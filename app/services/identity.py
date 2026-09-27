@@ -20,6 +20,7 @@ from app.core.security import VerifiedToken
 from app.db.base import utcnow
 from app.db.tenant import set_current_user
 from app.integrations.cognito import UserInfoClient
+from app.integrations.storage import ObjectStorage
 from app.models import User
 from app.repositories.tenancy import AssignmentRepository, MembershipRepository
 from app.repositories.users import UserRepository
@@ -30,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 LAST_LOGIN_RESOLUTION = timedelta(minutes=15)
 STAFF_ROLES = (PlatformRole.PLATFORM_ADMINISTRATOR, PlatformRole.DIGITAL_SUCCESS_MANAGER)
+#: How long the profile-photo link in /auth/me works.
+AVATAR_URL_TTL_SECONDS = 900
 
 
 def build_principal(session: Session, user: User) -> Principal:
@@ -99,7 +102,7 @@ def resolve_principal(
     return build_principal(session, user)
 
 
-def me(session: Session, principal: Principal) -> MeResponse:
+def me(session: Session, principal: Principal, storage: ObjectStorage | None = None) -> MeResponse:
     user = UserRepository(session).get(principal.user_id)
     if user is None:  # pragma: no cover - principal was just built from this row
         raise UnauthorizedError()
@@ -122,6 +125,12 @@ def me(session: Session, principal: Principal) -> MeResponse:
         permissions=sorted(principal.global_permissions()),
         clinics=clinics,
         all_clinics=principal.is_platform_administrator,
+        avatar_url=(
+            storage.presign_get(user.avatar_key, AVATAR_URL_TTL_SECONDS)
+            if storage is not None and user.avatar_key
+            else None
+        ),
+        last_login_at=user.last_login_at,
     )
 
 

@@ -1,0 +1,40 @@
+# PROD: a person starts it (Actions → Deploy PROD → Run workflow) with a released tag or SHA.
+#   1. The commit must already be on main (and therefore running in DEV).
+#   2. The "production" GitHub environment requires approval from a reviewer.
+# Tags (vX.Y.Z) publish the API contract only (release.yml); they do not deploy by themselves.
+name: Deploy PROD
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag (e.g. v0.1.0) or SHA to deploy — must be on main'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  verify:
+    name: Release commit is on main
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: sha
+        run: |
+          REF="${{ github.event.inputs.ref }}"
+          SHA=$(git rev-parse "$REF^{commit}")
+          git merge-base --is-ancestor "$SHA" origin/main || { echo "::error::$REF is not on main"; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: verify
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: production
+      ref: ${{ needs.verify.outputs.sha }}

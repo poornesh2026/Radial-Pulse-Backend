@@ -444,3 +444,106 @@ def test_app_role_cannot_delete_audit_rows_even_with_the_archive_flag(db, sessio
         s.execute(text("SELECT set_config('app.archiving', 'on', true)"))
         with pytest.raises(DBAPIError, match="permission denied"):
             s.execute(text("DELETE FROM audit_events"))
+
+
+# ------------------------------------------------------------------ 0010: chat, connections, settings
+def test_chat_is_locked_per_clinic_and_never_changed(db, session_factory) -> None:  # type: ignore[no-untyped-def]
+    from app.core.enums import ChatSide
+    from app.db.tenant import set_current_user
+    from app.models import ChatMessage, ChatReadState
+
+    a, b = make_clinic(db, "A"), make_clinic(db, "B")
+    rahul = make_user(db, PlatformRole.CLINIC_USER)
+    bose = make_user(db, PlatformRole.CLINIC_USER)
+    db.add_all(
+        [
+            ChatMessage(clinic_id=a.id, sender_name="Priya", sender_side=ChatSide.RADIAL_PULSE, body="to A"),
+            ChatMessage(clinic_id=b.id, sender_name="Priya", sender_side=ChatSide.RADIAL_PULSE, body="to B"),
+            ChatReadState(clinic_id=a.id, user_id=bose.id),  # someone else's reading position in A
+        ]
+    )
+    db.commit()
+
+    with session_factory() as s:
+        set_current_user(s, rahul.id)
+        set_tenant_scope(s, [a.id])
+        assert [m.body for m in s.query(ChatMessage).all()] == ["to A"]  # no filter on purpose
+        assert s.query(ChatReadState).count() == 0  # only your own reading position
+        s.add(ChatMessage(clinic_id=b.id, sender_name="x", sender_side=ChatSide.CLINIC, body="sneak"))
+        with pytest.raises(DBAPIError, match="row-level security"):
+            s.commit()
+
+    with session_factory() as s:  # messages cannot be edited or deleted by the app login
+        set_current_user(s, rahul.id)
+        set_tenant_scope(s, [a.id])
+        with pytest.raises(DBAPIError, match="permission denied"):
+            s.execute(text("UPDATE chat_messages SET body = 'edited'"))
+    with session_factory() as s:
+        set_tenant_scope(s, [a.id])
+        with pytest.raises(DBAPIError, match="permission denied"):
+            s.execute(text("DELETE FROM chat_messages"))
+
+
+def test_connections_follow_the_clinic_rule(db, session_factory) -> None:  # type: ignore[no-untyped-def]
+    from app.core.enums import ConnectionPlatform, ConnectionStatus
+    from app.models import PlatformConnection
+
+    a, b = make_clinic(db, "A"), make_clinic(db, "B")
+    for clinic in (a, b):
+        db.add(
+            PlatformConnection(
+                clinic_id=clinic.id, platform=ConnectionPlatform.INSTAGRAM, status=ConnectionStatus.CONNECTED
+            )
+        )
+    db.commit()
+    with session_factory() as s:
+        set_tenant_scope(s, [a.id])
+        assert [c.clinic_id for c in s.query(PlatformConnection).all()] == [a.id]
+        with pytest.raises(DBAPIError, match="permission denied"):
+            s.execute(text("DELETE FROM platform_connections"))
+
+
+def test_platform_settings_readable_by_all_changed_only_with_all_clinics(db, session_factory) -> None:  # type: ignore[no-untyped-def]
+    from app.models import PlatformSettings
+
+    a = make_clinic(db, "A")
+    with session_factory() as s:  # a clinic scope can read …
+        set_tenant_scope(s, [a.id])
+        assert s.get(PlatformSettings, 1) is not None
+        # … but an UPDATE silently matches no row (the policy hides it from writes).
+        changed = s.execute(text("UPDATE platform_settings SET organization_name = 'hacked'")).rowcount
+        s.commit()
+        assert changed == 0
+    with session_factory() as s:  # Platform Administrator scope
+        set_tenant_scope(s, None)
+        assert s.execute(text("UPDATE platform_settings SET support_phone = '123'")).rowcount == 1
+        s.commit()
+
+
+def test_notification_switches_are_private_but_senders_can_check_them(db, session_factory) -> None:  # type: ignore[no-untyped-def]
+    from app.core.enums import NotificationCategory, NotificationChannel
+    from app.db.tenant import set_current_user
+    from app.models import NotificationPreference
+    from app.repositories.settings import SettingsRepository
+
+    a = make_clinic(db, "A")
+    priya = make_user(db, PlatformRole.DIGITAL_SUCCESS_MANAGER)
+    rahul = make_user(db, PlatformRole.CLINIC_USER)
+    db.add(
+        NotificationPreference(
+            user_id=priya.id,
+            category=NotificationCategory.WORK_ITEM_ASSIGNED,
+            channel=NotificationChannel.IN_APP,
+            enabled=False,
+        )
+    )
+    db.commit()
+    with session_factory() as s:  # Dr Rahul cannot read Priya's switches …
+        set_current_user(s, rahul.id)
+        set_tenant_scope(s, [a.id])
+        assert s.query(NotificationPreference).count() == 0
+        # … but sending her a notification can still ask "is it on?" (true/false only).
+        repo = SettingsRepository(s)
+        cat, ch = NotificationCategory.WORK_ITEM_ASSIGNED, NotificationChannel.IN_APP
+        assert repo.notification_enabled(priya.id, cat, ch) is False
+        assert repo.notification_enabled(rahul.id, cat, ch) is True  # default: on

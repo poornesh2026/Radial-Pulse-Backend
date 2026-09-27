@@ -9,7 +9,14 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.enums import AssetKind, AssetStatus, ClinicRole, ClinicStage, PlatformRole
+from app.core.enums import (
+    AssetKind,
+    AssetStatus,
+    ClinicRole,
+    ClinicStage,
+    NotificationCategory,
+    PlatformRole,
+)
 from app.core.errors import (
     ConflictError,
     DomainValidationError,
@@ -28,7 +35,6 @@ from app.models import (
     ClinicPractitioner,
     ClinicProfile,
     ClinicStageHistory,
-    Notification,
     Organization,
     Practitioner,
     User,
@@ -58,7 +64,7 @@ from app.schemas.clinics import (
     TeamMemberCreate,
     TeamMemberRead,
 )
-from app.services import audit
+from app.services import audit, notify
 from app.services.invitations import send_invite
 
 
@@ -553,14 +559,14 @@ def set_assignment(
     except IntegrityError as exc:
         session.rollback()
         raise ConflictError("The clinic's DSM was changed by someone else. Reload and try again") from exc
-    session.add(
-        Notification(
-            user_id=target.id,
-            clinic_id=clinic_id,
-            kind="assignment.new",
-            title=f"New clinic in your portfolio: {clinic.name}"[:200],
-            link=f"/clinics/{clinic_id}",
-        )
+    notify.send(
+        session,
+        user_id=target.id,
+        category=NotificationCategory.CLINIC_ASSIGNED,
+        clinic_id=clinic_id,
+        kind="assignment.new",
+        title=f"New clinic in your portfolio: {clinic.name}",
+        link=f"/clinics/{clinic_id}",
     )
     audit.record(
         session,

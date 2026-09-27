@@ -39,6 +39,7 @@ ALLOWED_MIME_TYPES: dict[AssetKind, set[str]] = {
     AssetKind.REPORT: DOCS | {"text/html", "application/json"},
     AssetKind.GENERATED_MEDIA: IMAGE | AUDIO | VIDEO,
     AssetKind.DOCUMENT: DOCS,
+    AssetKind.CHAT_ATTACHMENT: IMAGE | DOCS,
 }
 
 EXTENSIONS = {

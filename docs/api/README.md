@@ -2,7 +2,7 @@
 
 Base path: `/api/v1`. JSON only. Auth: `Authorization: Bearer <Cognito access token>`.
 Interactive docs: `http://localhost:8000/docs` (LOCAL and DEV only; off in PROD).
-Contract file: `openapi/openapi.json` (generated — do not edit).
+Contract file: `openapi/openapi.json` (generated — do not edit). Current version: see `openapi/CHANGELOG.md`.
 
 ## Endpoints (foundation)
 
@@ -26,7 +26,9 @@ Contract file: `openapi/openapi.json` (generated — do not edit).
 | reports       | `GET/POST …/reports` · `GET …/reports/{id}`                                                                | `reports:read` · `reports:write`           |
 | presence      | `GET/POST …/presence-profiles` · `PATCH …/presence-profiles/{id}` (confirm/reject)                         | `presence:read` · `presence:write`         |
 | assessments   | `POST …/assessments` (202, queued) · `GET …/assessments` · `GET …/assessments/{id}`                        | `assessments:request` · `assessments:read` |
-| reserved      | `…/chat` (design in `app/api/v1/routers/chat.py`)                                                          | boundary only, no endpoints                |
+| chat          | `GET/POST …/chat/messages` · `POST …/chat/read` · `GET /chat/inbox`                                       | `chat:read` · `chat:write`                 |
+| connections   | `GET …/connections` · `POST …/connections/{platform}/start` · `…/complete` · `…/disconnect`                | `connections:read` · `connections:manage`  |
+| settings      | `GET/PATCH /settings/platform` · `GET /settings/integrations` · `/auth/me/notification-settings` · `/auth/me/avatar…` | signed in · `settings:manage`       |
 
 `…` = `/clinics/{clinic_id}`.
 
@@ -54,13 +56,14 @@ Notes:
 ## Changing the API (contract workflow)
 
 ```bash
-# 1. change schemas/routers in services/api (Person 1)
-make openapi     # runs api:openapi first, then openapi-typescript
-git add packages/api-client          # commit the regenerated contract in the SAME PR
+make openapi                         # regenerate openapi/openapi.json
+# bump CONTRACT_VERSION in app/core/contract.py, add "## vX.Y.Z" to openapi/CHANGELOG.md
+git add openapi app/core/contract.py # commit the regenerated contract in the SAME PR
 ```
 
-CI regenerates the contract and fails if the committed copy is stale, and checks that
-`packages/shared-types` enums still match the API.
+CI regenerates the contract and fails if the committed copy is stale or the version was not
+bumped. Releasing it to the frontend: [contract-versioning.md](contract-versioning.md) ·
+how the frontend consumes it: [for-frontend.md](for-frontend.md).
 
 ## Rules for new endpoints
 

@@ -48,3 +48,18 @@ def test_openapi_exposes_platform_enums(client) -> None:  # type: ignore[no-unty
         "ProblemDetails",
     ):
         assert name in schemas, name
+
+
+def test_health_and_openapi_carry_the_contract_version(client) -> None:  # type: ignore[no-untyped-def]
+    from app.core.contract import CONTRACT_VERSION
+
+    assert client.get("/health").json()["contract_version"] == CONTRACT_VERSION
+    assert client.get("/openapi.json").json()["info"]["version"] == CONTRACT_VERSION
+
+
+def test_committed_contract_file_is_up_to_date() -> None:
+    """openapi/openapi.json must be exactly what the code produces (run `make openapi`)."""
+    from app.openapi_export import check
+    from tests.conftest import API_ROOT
+
+    assert check(API_ROOT / "openapi" / "openapi.json"), "run `make openapi` and commit the result"

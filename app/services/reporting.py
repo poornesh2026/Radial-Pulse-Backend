@@ -70,9 +70,10 @@ def list_snapshots(
     source: DataSource | None,
     limit: int,
     offset: int,
+    latest: bool = False,
 ) -> tuple[list[Any], int]:
     return SnapshotRepository(session).list_for_clinic(
-        ctx.clinic_id, metric_key=metric_key, source=source, limit=limit, offset=offset
+        ctx.clinic_id, metric_key=metric_key, source=source, limit=limit, offset=offset, latest=latest
     )
 
 

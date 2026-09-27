@@ -2,12 +2,15 @@
 
 from app.models.assessment import Assessment, AssessmentComponent, AssessmentFinding
 from app.models.assets import Asset
+from app.models.collaboration import ChatMessage, ChatReadState
+from app.models.connections import PlatformConnection
 from app.models.governance import Approval, AuditEvent
 from app.models.identity import User
 from app.models.jobs import BackgroundJob
 from app.models.presence import PresenceProfile
 from app.models.profile import ClinicProfile, ConsentRecord
 from app.models.reporting import MetricSnapshot, ReportArtifact
+from app.models.settings import NotificationPreference, PlatformSettings
 from app.models.tenancy import (
     Clinic,
     ClinicAssignment,
@@ -27,6 +30,8 @@ __all__ = [
     "Asset",
     "AuditEvent",
     "BackgroundJob",
+    "ChatMessage",
+    "ChatReadState",
     "Clinic",
     "ClinicAssignment",
     "ClinicMembership",
@@ -36,7 +41,10 @@ __all__ = [
     "ConsentRecord",
     "MetricSnapshot",
     "Notification",
+    "NotificationPreference",
     "Organization",
+    "PlatformConnection",
+    "PlatformSettings",
     "Practitioner",
     "PresenceProfile",
     "ReportArtifact",

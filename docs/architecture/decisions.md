@@ -78,8 +78,10 @@ Full detail: [database-schema.md](database-schema.md), section 0.
 12. **Production image promotion** — PROD currently rebuilds from the released commit.
     Promote the exact DEV image digest instead (needs cross-account ECR access).
 13. **Custom domains** (app/api/auth) and ACM certificates.
-14. **Chat** — design agreed (PostgreSQL history, S3 attachments, WebSockets only for
-    delivery); build timing and whether messages may contain health information are open.
+14. **Chat** — BUILT (Sep 2026, migration 0010, contract v0.1.0): one conversation per clinic,
+    PostgreSQL history, S3 attachments, polling (WebSocket push later, delivery only).
+    Open for the mentor: **D18** may Clinic Team Members send (today: read only)?
+    **D19** confirm the rule "no patient health information in chat" (the app shows a notice).
 15. **Health information** — if patient data is ever stored, a formal compliance assessment
     is required first (no HIPAA or similar claim is made).
 16. **Nx Cloud / remote cache** — off (`NX_NO_CLOUD`). Enable if CI gets slow.
@@ -89,3 +91,13 @@ Full detail: [database-schema.md](database-schema.md), section 0.
 19. **Archive retention** — old `metric_snapshots` (>180 days) and `audit_events` (>365 days) move
     to an S3 archive monthly (built). Open: how long the archive is kept (suggested 7 years) and
     whether audit files use S3 Object Lock. Needs a business/legal decision before PROD.
+20. **Separate backend repo** — DECIDED (Sep 2026): the frontend has its own repo, so the API
+    moved to `radial-pulse-backend` (history kept). The contract is published as GitHub Releases
+    (`vX.Y.Z` with `openapi.json`); PROD deploys are started by hand. The monorepo's
+    `services/api` stops being used once the team switches.
+21. **Connected accounts** — BUILT (migration 0010): OAuth for Google (GBP, YouTube), Meta
+    (Instagram, Facebook), LinkedIn and X, read-only scopes; tokens only in Secrets Manager (one
+    secret per connection, ~USD 0.40/month each). Open: Meta/LinkedIn app reviews; who builds the
+    data-sync jobs (with the domain teams).
+22. **Settings** — BUILT (migration 0010): platform settings (one row, Admin), notification
+    switches per person (in-app used now; email saved for later), profile photo.

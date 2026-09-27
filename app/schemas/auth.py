@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from app.core.enums import ClinicRole, PlatformRole
@@ -29,3 +31,8 @@ class MeResponse(ApiModel):
     #: Per-clinic access. Empty for Platform Administrators (they can access every clinic).
     clinics: list[ClinicAccess]
     all_clinics: bool
+    #: Short-lived link to my profile photo (fetch /auth/me again after it expires). None = no photo.
+    avatar_url: str | None = None
+    #: Settings → Security. Sign-in is Google only (through Cognito); there is no password to change.
+    sign_in_method: Literal["google"] = "google"
+    last_login_at: datetime | None = None

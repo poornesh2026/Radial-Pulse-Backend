@@ -2,8 +2,9 @@
 
 THE SOURCE OF TRUTH for these values. They are exported to OpenAPI (as named
 schemas) in openapi/openapi.json; the frontend generates its TypeScript types from
-that file, so a change here reaches the screens through a new contract release. Add values freely; renaming or removing a value needs a data
-migration and a coordinated frontend change.
+that file, so a change here reaches the screens through a new contract release.
+Add values freely; renaming or removing a value needs a data migration and a
+coordinated frontend change.
 
 Stored in the database as plain strings (``native_enum=False``) so adding a value
 never needs an ``ALTER TYPE``.
@@ -107,6 +108,8 @@ class AssetKind(StrEnum):
     REPORT = "report"
     GENERATED_MEDIA = "generated_media"
     DOCUMENT = "document"
+    #: A photo or PDF sent in the clinic chat (Client Collaboration).
+    CHAT_ATTACHMENT = "chat_attachment"
 
 
 class AssetStatus(StrEnum):
@@ -225,3 +228,54 @@ class UserStatus(StrEnum):
     INVITED = "invited"  # created, has not signed in yet
     ACTIVE = "active"
     DEACTIVATED = "deactivated"
+
+
+# ------------------------------------------------------------------ chat (Client Collaboration)
+class ChatSide(StrEnum):
+    """Which side of the conversation a message came from (left or right bubble)."""
+
+    RADIAL_PULSE = "radial_pulse"  # Platform Administrator or Digital Success Manager
+    CLINIC = "clinic"  # Clinic Administrator or Clinic Team Member
+
+
+# ------------------------------------------------------------------ connected accounts
+class ConnectionPlatform(StrEnum):
+    """Accounts a clinic can connect with OAuth ("Connect Your Accounts").
+
+    The website is not here: it needs no login, it is just a link (clinic details / presence).
+    """
+
+    GOOGLE_BUSINESS_PROFILE = "google_business_profile"
+    INSTAGRAM = "instagram"
+    FACEBOOK = "facebook"
+    YOUTUBE = "youtube"
+    LINKEDIN = "linkedin"
+    X = "x"
+
+
+class ConnectionStatus(StrEnum):
+    NOT_CONNECTED = "not_connected"  # never connected (not stored; shown by the API)
+    PENDING = "pending"  # sign-in with the platform started, not finished
+    CONNECTED = "connected"
+    NEEDS_RECONNECT = "needs_reconnect"  # token expired or was revoked: press Connect again
+    DISCONNECTED = "disconnected"
+
+
+# ------------------------------------------------------------------ settings
+class NotificationCategory(StrEnum):
+    """Groups of in-app notifications a person can switch on/off (Settings → Notifications)."""
+
+    CLINIC_ASSIGNED = "clinic_assigned"  # a clinic was assigned to me (DSM)
+    WORK_ITEM_ASSIGNED = "work_item_assigned"  # a work item was given to me
+    APPROVAL_HANDOFF = "approval_handoff"  # a review was handed to me
+
+
+class NotificationChannel(StrEnum):
+    IN_APP = "in_app"
+    EMAIL = "email"  # saved now; sending emails for notifications comes later
+
+
+class DateFormat(StrEnum):
+    DD_MMM_YYYY = "DD MMM YYYY"  # 27 Sep 2026
+    DD_MM_YYYY = "DD/MM/YYYY"
+    YYYY_MM_DD = "YYYY-MM-DD"

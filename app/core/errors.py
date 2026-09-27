@@ -20,7 +20,7 @@ class ValidationIssue(BaseModel):
 
 
 class ProblemDetails(BaseModel):
-    """The API's only error shape. Published in openapi/openapi.json (the frontend generates its types from it)."""
+    """The API's only error shape. Published in openapi/openapi.json (frontend types come from it)."""
 
     type: str
     title: str
@@ -86,3 +86,11 @@ class ServiceUnavailableError(AppError):
     status_code = 503
     code = "service_unavailable"
     title = "Service unavailable"
+
+
+class UpstreamError(AppError):
+    """Another company's service (Google, Meta, …) refused or failed. Safe to try again later."""
+
+    status_code = 502
+    code = "upstream_error"
+    title = "The other service did not accept the request"

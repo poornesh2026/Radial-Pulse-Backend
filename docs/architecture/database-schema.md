@@ -41,6 +41,7 @@ Any of these can still be changed before the migrations are written.
 | D14 | Clinic Administrator adding people | **Yes:** a Clinic Administrator can add **other Clinic Administrators** to their own clinic(s). Staff (Team Member) logins come later | You |
 | D15 | Who approves a report before the clinic sees it | **The clinic's DSM alone** (checks, approves, publishes). Who did it is recorded | You |
 | D17 | Weak spots fixed (review, 27 Sep) | **#1** people tables under RLS · **#3** old rows archived to S3 · **#4** metric numbers in a real column · **#5** a doctor can work at several branches of the same business · **#6** fast, safe search · **#7** report status kept in step by the database. See section 12 | You |
+| D18 | Chat, connected accounts, settings (27 Sep) | **Built** in migration 0010 (contract v0.1.0): `chat_messages`, `chat_read_states`, `platform_connections` (tokens in Secrets Manager), `platform_settings`, `notification_preferences`, `users.avatar_key`. Clinic Team Members read the chat but do not send. See section 13 | You |
 | D16 | Clinic Team Member (clinic staff) | **Built:** view-only in their own clinic (details, doctors, online links, published reports, tasks, numbers) plus uploading photos/files. No editing, adding people, approving or activity log. Added by the Admin, the DSM or a Clinic Administrator | You |
 
 ---
@@ -585,12 +586,9 @@ Five new migrations on top of 0004. All have a working downgrade.
 
 | Feature | Plan |
 |---|---|
-| Client Collaboration (chat) | `conversations`, `conversation_messages` (clinic-scoped, RLS); attachments through `assets`. Decide first whether messages may contain health information |
-| Connected accounts (mobile "Connect") | `platform_connections` (clinic, platform, status, scopes, connected_by). **Tokens go in AWS Secrets Manager, never in the database** |
 | Meetings and notes | `client_meetings` (clinic, when, in person / Google Meet, notes, outcome) |
 | Client decision per fix (Yes / Later / No) | extra columns on `work_items` (`client_decision`, `responsible_party` = our team or clinic) |
 | Re-assessment every 1–2 weeks | a schedule that creates `background_jobs`; no new table |
-| Staff profile photo | needs a non-clinic place in S3; initials are shown until then |
 
 ---
 
@@ -671,3 +669,27 @@ below, downgrade, upgrade again) — see section 12.
 - **Person 3:** the S3 archive bucket, a write-only task role, the ECS task and the monthly
   schedule — step by step in [archiving.md](../infrastructure/archiving.md).
 - `CREATE EXTENSION pg_trgm` needs `rds_superuser`; the Aurora master user that runs migrations has it.
+
+---
+
+## 13. Chat, connected accounts and settings (migration 0010)
+
+Full design: [chat-connections-settings.md](chat-connections-settings.md). Total now **27 tables**.
+
+| Table | What | Row-level security |
+|---|---|---|
+| `chat_messages` | one message: clinic, sender (+ name and side copied), text, attachment | clinic in scope; app login may only read and add |
+| `chat_read_states` | "I have read this clinic's chat up to …" (unread counts) | clinic in scope **and** your own |
+| `platform_connections` | a clinic's connected Instagram/Facebook/GBP/YouTube/LinkedIn/X; `secret_ref` points at Secrets Manager (no tokens in the database) | clinic in scope; no delete |
+| `platform_settings` | exactly one row: organization name, support email/phone, timezone, date format | read: everyone · change: Platform Administrator |
+| `notification_preferences` | a person's on/off switch per category and channel (no row = on) | your own |
+| `users.avatar_key` | profile photo in S3 (`users/<id>/avatar/…`) | (users rules) |
+
+Also: asset kind `chat_attachment`; function `rp_notification_enabled()` (answers true/false
+so a notification can respect someone else's switch without reading their settings).
+
+Checked on PostgreSQL 16 as the app login: other clinics' messages invisible; writing a message
+into another clinic refused; editing or deleting messages refused (no permission); someone
+else's read position or switches invisible and not writable; platform settings changed only
+with the all-clinics scope; nothing visible with no scope; CHECK rules (text or attachment,
+sender side, single settings row, one connection per clinic + platform); downgrade and upgrade again.

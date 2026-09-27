@@ -54,6 +54,12 @@ Generated from `app/core/rbac.py` (the only place these are defined).
 | `snapshots:read`            |           ✓            |                 ✓                  |          ✓           |        ✓         |
 | `snapshots:write`           |           ✓            |                 ✓                  |                      |        ✓         |
 | `audit_log:read`            |           ✓            |                 ✓                  |          ✓           |                  |
+| `chat:read`                 |           ✓            |                 ✓                  |          ✓           |                  |
+| `chat:write`                |           ✓            |                 ✓                  |          ✓           |                  |
+| `connections:read`          |           ✓            |                 ✓                  |          ✓           |                  |
+| `connections:manage`        |           ✓            |                 ✓                  |          ✓           |                  |
+
+Clinic Team Members: `chat:read` and `connections:read` (plus the view-only set in the API doc).
 
 | Platform-level permission | Platform Administrator | Digital Success Manager | Clinic user |
 | ------------------------- | :--------------------: | :---------------------: | :---------: |
@@ -61,6 +67,7 @@ Generated from `app/core/rbac.py` (the only place these are defined).
 | `users:read`              |           ✓            |                         |             |
 | `users:manage`            |           ✓            |                         |             |
 | `assignments:manage`      |           ✓            |                         |             |
+| `settings:manage`         |           ✓            |                         |             |
 
 Extra rules enforced in services:
 
@@ -134,6 +141,11 @@ for reading **and** writing (a row cannot be inserted into, or moved to, another
 | `organizations` | owns a clinic in scope · created by you · all |
 | `clinic_memberships`, `clinic_assignments` | clinic in scope, or the row is yours (read); clinic in scope (write) |
 | `notifications` | yours (or all) |
+| `chat_messages` (0010) | clinic in scope; read + add only (never changed or deleted) |
+| `chat_read_states` (0010) | clinic in scope **and** yours |
+| `platform_connections` (0010) | clinic in scope; no delete |
+| `platform_settings` (0010) | everyone reads; only the all-clinics scope changes it |
+| `notification_preferences` (0010) | yours (senders ask `rp_notification_enabled()`, true/false only) |
 
 **Sign-in before the user is known.** `resolve_principal` uses two `SECURITY DEFINER`
 functions, `rp_user_id_by_sub(sub)` and `rp_user_by_email(email)`, that return **only the id

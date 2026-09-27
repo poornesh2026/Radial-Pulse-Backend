@@ -1,0 +1,109 @@
+# Reusable deployment of the API + worker to ECS (called by deploy-dev.yml and deploy-prod.yml).
+# Authenticates to AWS with GitHub OIDC — there are NO long-lived AWS keys in GitHub.
+#
+# Required GitHub *environment* variables (Settings → Environments → <env> → Variables),
+# copied from `terraform output` of that environment (Person 3):
+#   AWS_REGION, AWS_DEPLOY_ROLE_ARN, ECR_REPOSITORY_URL, ECS_CLUSTER, ECS_SERVICE,
+#   ECS_TASK_FAMILY, ECS_WORKER_SERVICE, ECS_WORKER_TASK_FAMILY, ECS_MIGRATE_TASK_FAMILY,
+#   MIGRATION_SUBNETS, MIGRATION_SECURITY_GROUP, API_BASE_URL
+#
+# The AWS deploy role must trust THIS repository (repo:<org>/radial-pulse-backend:environment:<env>).
+name: _deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      ref:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC → AWS STS
+
+jobs:
+  api:
+    name: API + worker → ECS (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 30
+    concurrency:
+      group: deploy-api-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gh-${{ github.run_id }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image (tag = git SHA, immutable)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          provenance: true
+          sbom: true
+          tags: ${{ vars.ECR_REPOSITORY_URL }}:${{ inputs.ref }}
+          build-args: GIT_SHA=${{ inputs.ref }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Register task definitions (api, worker, migrate) with the new image
+        id: taskdef
+        run: |
+          IMG="${{ vars.ECR_REPOSITORY_URL }}:${{ inputs.ref }}"
+          register() {  # $1 = task family → prints the new revision ARN
+            aws ecs describe-task-definition --task-definition "$1" --query taskDefinition > current.json
+            jq --arg IMG "$IMG" --arg SHA "${{ inputs.ref }}" '
+              .containerDefinitions |= map(.image = $IMG
+                | .environment = ((.environment // []) | map(select(.name != "SERVICE_VERSION"))
+                                  + [{"name":"SERVICE_VERSION","value":$SHA}]))
+              | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities,
+                    .registeredAt, .registeredBy)' current.json > next.json
+            aws ecs register-task-definition --cli-input-json file://next.json \
+              --query taskDefinition.taskDefinitionArn --output text
+          }
+          echo "api=$(register "${{ vars.ECS_TASK_FAMILY }}")" >> "$GITHUB_OUTPUT"
+          echo "worker=$(register "${{ vars.ECS_WORKER_TASK_FAMILY }}")" >> "$GITHUB_OUTPUT"
+          echo "migrate=$(register "${{ vars.ECS_MIGRATE_TASK_FAMILY }}")" >> "$GITHUB_OUTPUT"
+
+      - name: Run database migrations (one-off task, owner login, same image)
+        run: |
+          TASK=$(aws ecs run-task --cluster "${{ vars.ECS_CLUSTER }}" --launch-type FARGATE \
+            --task-definition "${{ steps.taskdef.outputs.migrate }}" \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ vars.MIGRATION_SUBNETS }}],securityGroups=[${{ vars.MIGRATION_SECURITY_GROUP }}],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Migration task: $TASK"
+          aws ecs wait tasks-stopped --cluster "${{ vars.ECS_CLUSTER }}" --tasks "$TASK"
+          CODE=$(aws ecs describe-tasks --cluster "${{ vars.ECS_CLUSTER }}" --tasks "$TASK" \
+                   --query 'tasks[0].containers[0].exitCode' --output text)
+          if [ "$CODE" != "0" ]; then echo "::error::Migration failed (exit $CODE). Services NOT updated."; exit 1; fi
+
+      - name: Deploy api and worker (rolling, with circuit breaker + rollback)
+        run: |
+          aws ecs update-service --cluster "${{ vars.ECS_CLUSTER }}" --service "${{ vars.ECS_SERVICE }}" \
+            --task-definition "${{ steps.taskdef.outputs.api }}" > /dev/null
+          aws ecs update-service --cluster "${{ vars.ECS_CLUSTER }}" --service "${{ vars.ECS_WORKER_SERVICE }}" \
+            --task-definition "${{ steps.taskdef.outputs.worker }}" > /dev/null
+          aws ecs wait services-stable --cluster "${{ vars.ECS_CLUSTER }}" \
+            --services "${{ vars.ECS_SERVICE }}" "${{ vars.ECS_WORKER_SERVICE }}"
+
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 10); do
+            BODY=$(curl -fsS "${{ vars.API_BASE_URL }}/health") && echo "$BODY" | jq -e --arg SHA "${{ inputs.ref }}" '.version == $SHA' && exit 0
+            sleep 6
+          done
+          echo "::error::Smoke test failed"; exit 1

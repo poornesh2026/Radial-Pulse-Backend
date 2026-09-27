@@ -36,4 +36,6 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: When the last invite email was sent ("Resend invite").
     last_invited_at: Mapped[datetime | None]
     last_login_at: Mapped[datetime | None]
+    #: Profile photo (Settings → My Profile). S3 key under ``users/{id}/avatar/``; never a URL.
+    avatar_key: Mapped[str | None] = mapped_column(String(512))
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
