@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.health import router as health_router
 from app.api.v1 import api_router
 from app.core.config import Settings, get_settings
+from app.core.contract import CONTRACT_VERSION
 from app.core.error_handlers import register_error_handlers
 from app.core.logging import configure_logging
 from app.middleware.request_context import RequestContextMiddleware
@@ -25,7 +26,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="Radial Pulse API",
-        version=settings.service_version,
+        version=CONTRACT_VERSION,
         description=(
             "Platform API for Radial Pulse (clinics & practitioners). Every clinic-scoped route is "
             "authorized server-side; see docs/architecture/multi-tenancy.md."

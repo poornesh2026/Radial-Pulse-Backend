@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import Engine
 
 from app.core.config import get_settings
+from app.core.contract import CONTRACT_VERSION
 from app.db.session import get_engine, ping
 
 router = APIRouter(tags=["health"])
@@ -21,6 +22,7 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     service: str
     version: str
+    contract_version: str
     environment: str
 
 
@@ -33,7 +35,11 @@ class ReadinessResponse(BaseModel):
 def health() -> HealthResponse:
     s = get_settings()
     return HealthResponse(
-        status="ok", service=s.service_name, version=s.service_version, environment=s.app_env
+        status="ok",
+        service=s.service_name,
+        version=s.service_version,
+        contract_version=CONTRACT_VERSION,
+        environment=s.app_env,
     )
 
 

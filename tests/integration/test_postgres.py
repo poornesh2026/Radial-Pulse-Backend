@@ -20,7 +20,7 @@ def test_migrations_match_models(engine) -> None:  # type: ignore[no-untyped-def
 
     with engine.connect() as conn:
         diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
-    assert diff == [], f"Models and migrations differ — run `nx run api:migration --name=...`: {diff}"
+    assert diff == [], f"Models and migrations differ — run `make migration NAME=...`: {diff}"
 
 
 def test_audit_events_are_append_only(db) -> None:  # type: ignore[no-untyped-def]

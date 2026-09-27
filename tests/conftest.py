@@ -1,9 +1,9 @@
 """Test harness.
 
 Database:
-* default: a fresh in-memory SQLite per test (fast; used by `nx test api`)
+* default: a fresh in-memory SQLite per test (fast; used by `make test`)
 * if TEST_DATABASE_URL is set (PostgreSQL): schema built with the REAL Alembic
-  migrations once, tables truncated after each test (used by `nx integration-test api` and CI)
+  migrations once, tables truncated after each test (used by `make integration-test` and CI)
 
 Auth: real JWT verification with a test RSA key pair — the verifier is the production
 class; only its key source is swapped. There is no auth bypass.
@@ -51,7 +51,7 @@ APP_TEST_USER = "radial_app_test"
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     if TEST_DATABASE_URL:
         return
-    skip = pytest.mark.skip(reason="needs PostgreSQL: set TEST_DATABASE_URL (nx run api:integration-test)")
+    skip = pytest.mark.skip(reason="needs PostgreSQL: set TEST_DATABASE_URL (make integration-test)")
     for item in items:
         if "integration" in item.keywords:
             item.add_marker(skip)

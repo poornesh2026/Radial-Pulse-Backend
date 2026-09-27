@@ -1,6 +1,6 @@
 """Demo data that looks like the screen designs — for local/DEV testing and for Person 2's screens.
 
-    uv run python -m app.cli seed-demo            (or: pnpm nx run api:seed-demo)
+    uv run python -m app.cli seed-demo            (or: make seed-demo)
 
 * Refuses to run in PROD.
 * Safe to run twice: if the demo organization exists, nothing is added.

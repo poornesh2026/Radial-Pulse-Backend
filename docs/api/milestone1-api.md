@@ -1,0 +1,335 @@
+# Milestone 1 API — what changed for the screens
+
+Owner: Person 1 · For: Person 2 (web/mobile) · 26 Sep 2026 · **updated 27 Sep** (see section 7)
+
+All routes are under `/api/v1` and need `Authorization: Bearer <Cognito access token>`.
+Errors are always problem+json: `{ "type", "title", "status", "detail" }`.
+**404 = no access to that clinic (or it does not exist). 403 = you can see it but may not do this.
+409 = not allowed in the current state (the `detail` says why, in plain words).**
+
+After pulling this branch, regenerate the typed client:
+
+```bash
+make openapi            # writes openapi/openapi.json
+make openapi    # writes the real schema.d.ts
+```
+
+---
+
+## 1. Screens → routes
+
+| Screen | Route(s) |
+|---|---|
+| Admin / DSM dashboard tiles + charts | `GET /dashboard/summary` |
+| Clinics list (Admin) / My Clinics (DSM) | `GET /clinics?stage=…&dsm_user_id=…&unassigned=…&q=…&archived=…` |
+| Add Clinic | `POST /clinics` |
+| Clinic details header / edit | `GET /clinics/{id}`, `PATCH /clinics/{id}` |
+| Stepper | `POST /clinics/{id}/stage`, `GET /clinics/{id}/stage-history` |
+| "Not interested" / bring back | `POST /clinics/{id}/archive`, `POST /clinics/{id}/restore` |
+| Assigned DSM dropdown + "Update Assignment" | `PUT /clinics/{id}/assignment`, `DELETE /clinics/{id}/assignment`, history: `GET /clinics/{id}/assignments` |
+| Practitioners (was Doctors) | `GET/POST /clinics/{id}/practitioners`, `PATCH /clinics/{id}/practitioners/{pid}` |
+| Clinic team: Clinic Administrators + staff (mobile Profile → Team Members) | `GET/POST /clinics/{id}/team`, `PATCH /clinics/{id}/team/{mid}`, `POST /clinics/{id}/team/{mid}/resend-invite` |
+| Users screen | `GET /users`, `POST /users`, `PATCH /users/{id}`, `POST /users/{id}/resend-invite` |
+| Settings → My Profile | `GET /auth/me`, `PATCH /auth/me` |
+| Findings "Fix Now / In Progress / Mark Done" | `POST /clinics/{id}/work-items` (with `source_finding_id`), `PATCH …/work-items/{wid}` |
+| Pending-work chips | included in each `GET /clinics` row (`open_work`) |
+
+---
+
+## 2. Clinic stages
+
+5 steps. Use `CLINIC_STAGE_LABELS` / `CLINIC_STAGE_TABS` from `@radial-pulse/shared-types`.
+
+| Value | Label | Admin tab |
+|---|---|---|
+| `prospective_client` | New lead | Prospects |
+| `profile_enriched` | Found online | Prospects |
+| `assessment_completed` | Report ready | In Progress |
+| `client_discussion` | In talks | In Progress |
+| `active_client` | Customer | Active |
+
+A clinic that says no is **archived** (`is_active: false`, `archived_reason`), it keeps its stage.
+
+---
+
+## 3. Routes in detail
+
+### `GET /clinics` — list with filters
+
+Query: `stage` (repeat for several: `?stage=prospective_client&stage=profile_enriched`),
+`dsm_user_id`, `unassigned=true`, `q` (clinic name, practitioner name or website),
+`archived=true` (only archived; default shows only live clinics), `limit`, `offset`.
+
+Each row = the clinic fields (below) **plus**:
+
+```json
+{
+  "primary_practitioner_name": "Dr. Rahul Mehta",
+  "dsm": { "id": "…", "full_name": "Priya Shah", "email": "priya@radialpulse.com" },
+  "open_work": [
+    { "area": "search_readiness", "open_count": 3 },
+    { "area": "google_business_profile", "open_count": 2 }
+  ]
+}
+```
+
+`dsm` is `null` when nobody is assigned. Chip labels: `WORK_AREA_CHIP_LABELS` (SEO, GBP, Social, Profile…).
+
+### Clinic object (`GET /clinics/{id}`, and inside lists)
+
+```json
+{
+  "id": "…", "organization_id": "…", "name": "Smile Dental Care",
+  "specialty": "General Dentistry, Implants", "description": "…", "email": "info@smiledentalcare.in",
+  "phone": "+91 98765 43210", "website_url": "https://smiledentalcare.in",
+  "address_line": "123 Health Street", "city": "Kakinada", "state": "Andhra Pradesh",
+  "postal_code": "533001", "country": "IN",
+  "latitude": 16.9891, "longitude": 82.2475, "cover_asset_id": null,
+  "stage": "client_discussion", "stage_changed_at": "2026-09-26T05:00:00Z",
+  "is_active": true, "archived_reason": null,
+  "created_at": "…", "updated_at": "…"
+}
+```
+
+### `POST /clinics` — add a clinic
+
+Admin or DSM. A DSM who adds it becomes its DSM automatically. Starts at `prospective_client`.
+
+```json
+{ "name": "Smile Dental Care", "primary_practitioner_name": "Dr. Rahul Mehta",
+  "website_url": "https://smiledentalcare.in", "city": "Kakinada",
+  "latitude": 16.9891, "longitude": 82.2475 }
+```
+
+`latitude` and `longitude` must come together. `organization_id` = add as a branch of an existing business.
+
+### `PATCH /clinics/{id}` — edit details
+
+Admin, the clinic's DSM, or its Clinic Administrator. Any of: `name, specialty, description, email,
+phone, website_url, address_line, city, state, postal_code, latitude, longitude, cover_asset_id`.
+`cover_asset_id` must be an **uploaded `clinic_photo`** of this clinic. Stage and archiving are **not** here.
+
+### `POST /clinics/{id}/stage` — move the stepper
+
+Admin or the clinic's DSM only (clinic users get 403).
+
+```json
+{ "stage": "client_discussion", "note": "Met Dr. Rahul at the clinic" }
+```
+
+409 when: same stage · clinic archived · moving to `active_client` without an active Clinic Administrator
+(add the doctor's login first).
+
+### `GET /clinics/{id}/stage-history`
+
+```json
+[ { "id": "…", "from_stage": "prospective_client", "to_stage": "profile_enriched",
+    "note": null, "changed_by_user_id": "…", "changed_at": "…" } ]
+```
+
+### `POST /clinics/{id}/archive` · `POST /clinics/{id}/restore`
+
+Admin or DSM. Archive needs `{ "reason": "Not interested, has an agency" }` (3+ characters).
+Returns the clinic. 409 if already archived / not archived.
+
+### `PUT /clinics/{id}/assignment` — set the clinic's DSM
+
+Platform Administrator only. `{ "user_id": "<DSM id>" }`. Replaces the current DSM (the old one keeps
+a history row and loses access). The new DSM gets a notification. Same DSM again = no change (200).
+`DELETE /clinics/{id}/assignment` = no DSM (404 if there was none).
+
+### Practitioners
+
+`POST /clinics/{id}/practitioners`
+
+```json
+{ "full_name": "Dr. Neha Gupta", "specialty": "Orthodontics", "bio": "…", "is_primary": true }
+```
+
+Setting `is_primary: true` makes this the clinic's main practitioner (the old main one is un-marked).
+List returns the main one first.
+
+**Same doctor at another branch (new):** a doctor belongs to the business, so a doctor already
+added at Branch 1 can be linked to Branch 2 of the **same business** — send only their id:
+
+```json
+{ "practitioner_id": "<id from Branch 1's list>", "is_primary": false }
+```
+
+- 404 if that doctor belongs to another business (or does not exist) · 409 if already linked here.
+- Send **either** `full_name` (new doctor) **or** `practitioner_id` (link), not both.
+- `PATCH …/practitioners/{pid}`: name/specialty/bio/… change the doctor **everywhere**;
+  `is_primary` / `is_active` change only **this clinic's** link.
+- Response shape is unchanged: `id` is the doctor, `clinic_id`/`is_primary`/`is_active` are this clinic's link.
+
+### Clinic team
+
+- `POST /clinics/{id}/team` `{ "email": "dr.rahul@gmail.com", "full_name": "Dr. Rahul Mehta" }` →
+  adds a Clinic Administrator and **sends an invite email**. Allowed for Admin, DSM **and the clinic's
+  own Clinic Administrator**. Send `"role": "clinic_team_member"` to add **clinic staff** instead
+  (view-only, plus uploading photos/files).
+- Row: `{ id, clinic_id, user_id, email, full_name, role, is_active, has_signed_in }`.
+- `PATCH /clinics/{id}/team/{membership_id}` `{ "is_active": false }` — 409 if it would leave a
+  **Customer** clinic with no Clinic Administrator.
+- `POST /clinics/{id}/team/{membership_id}/resend-invite` → 204; 409 if they already signed in.
+- Adding an email that already has an account at **another** clinic works (same person, new
+  membership). Adding a Radial Pulse **staff** email → 409.
+
+### Users (Platform Administrator)
+
+- `GET /users?platform_role=digital_success_manager&is_active=true&q=priya`
+  Row: `{ id, email, full_name, phone, platform_role, is_active, status, last_invited_at, last_login_at,
+  created_at, assigned_clinic_count }` · `status` = `invited` | `active` | `deactivated`.
+- `POST /users` `{ "email", "full_name", "phone", "platform_role" }` → sends the invite email.
+- `PATCH /users/{id}` `{ "full_name"?, "phone"?, "is_active"? }` — you cannot deactivate yourself (409).
+- `POST /users/{id}/resend-invite` → 204; 409 if they already signed in.
+
+### My Profile
+
+`PATCH /auth/me` `{ "full_name"?, "phone"? }` → returns the same shape as `GET /auth/me` (now with `phone`).
+
+### Dashboard
+
+`GET /dashboard/summary` (Admin: all clinics · DSM: their clinics · clinic users: 403)
+
+```json
+{
+  "total_clinics": 128, "prospects": 38, "in_progress": 14, "active": 76, "archived": 5,
+  "by_stage": [ { "stage": "prospective_client", "count": 20 }, … ],
+  "new_clinics_by_month": [ { "month": "2026-04", "count": 9 }, … 6 months, oldest first ],
+  "assessments_awaiting_review": 6,
+  "open_work_items": 24
+}
+```
+
+Archived clinics are **not** in the totals.
+
+### Work items ("Fix Now")
+
+`POST /clinics/{id}/work-items` with only `{ "source_finding_id": "<finding id>" }` copies the title,
+suggested fix, area and finding code from the finding. 409 if that problem already has an open item.
+New fields on every work item: `area`, `finding_code`, `source_finding_id`, `completed_at`.
+`GET …/work-items?area=google_business_profile` filters by area.
+Map the buttons: Fix Now = create · In Progress = `PATCH {status: "in_progress"}` · Mark Done = `PATCH {status: "done"}`.
+Handing a work item or approval to someone who has **no access to this clinic** → **422**
+("Assignee has no access to this clinic"); to a deactivated person → 404.
+
+### Assessments
+
+Unchanged routes. New rules: a Clinic Administrator **cannot** approve, reject or "redo" an assessment
+(403), and each time a clinic person opens one it is written to the audit log.
+
+---
+
+## 4. Removed / renamed
+
+| Before | Now |
+|---|---|
+| `/clinics/{id}/doctors…` | `/clinics/{id}/practitioners…` |
+| permissions `doctors:read/write` | `practitioners:read/write` |
+| asset kind `doctor_photo` | `practitioner_photo` |
+| `POST /clinics/{id}/assignments` + `DELETE …/assignments/{aid}` | `PUT` / `DELETE /clinics/{id}/assignment` |
+| `PATCH /clinics/{id}` with `is_active` | `POST /clinics/{id}/archive` / `restore` |
+| — | new permission `clinics:manage` (stages, archive) |
+
+---
+
+## 5. Every route (full list, 52)
+
+All paths are under `/api/v1`. `{id}` is the clinic id.
+For any `/clinics/{id}/…` route: **no access to the clinic → 404**, **access but missing
+permission → 403**.
+
+| Method | Path | Who may call it | What it does |
+|---|---|---|---|
+| GET | `/auth/me` | signed in | Who am I, and what can I do? |
+| PATCH | `/auth/me` | signed in | Update my own name and phone (Settings → My Profile) |
+| GET | `/clinics` | signed in | Clinics the caller may see, with filters (the Clinics / My Client Portfolio table) |
+| POST | `/clinics` | `clinics:create` | Add a clinic (a lead) |
+| GET | `/clinics/{id}` | `clinics:read` |  |
+| PATCH | `/clinics/{id}` | `clinics:write` | Edit clinic details |
+| GET | `/clinics/{id}/approvals` | `clinics:read` |  |
+| POST | `/clinics/{id}/approvals/actions` | `clinics:read` + the action's own permission (e.g. `approvals:publish`) | submit / approve / reject / redo / publish / handoff |
+| GET | `/clinics/{id}/approvals/{approval_id}` | `clinics:read` |  |
+| POST | `/clinics/{id}/archive` | `clinics:manage` | Archive the clinic (e.g. it said no). A reason is required |
+| GET | `/clinics/{id}/assessments` | `assessments:read` | Clinic users only see PUBLISHED assessments |
+| POST | `/clinics/{id}/assessments` | `assessments:request` | Start a Digital Presence Assessment (runs in the background) |
+| GET | `/clinics/{id}/assessments/{assessment_id}` | `assessments:read` | Full assessment: score, components, findings |
+| GET | `/clinics/{id}/assets` | `assets:read` |  |
+| POST | `/clinics/{id}/assets/uploads` | `assets:upload` | Step 1: get a presigned URL to upload a file directly to S3 |
+| POST | `/clinics/{id}/assets/{asset_id}/confirm` | `assets:upload` | Step 3: confirm the upload finished (API verifies the object in S3) |
+| GET | `/clinics/{id}/assets/{asset_id}/download-url` | `assets:read` |  |
+| DELETE | `/clinics/{id}/assignment` | `assignments:manage` | Leave the clinic without a DSM |
+| PUT | `/clinics/{id}/assignment` | `assignments:manage` |  |
+| GET | `/clinics/{id}/assignments` | `clinics:read` | The clinic's DSM now (is_active=true) and before (history) |
+| GET | `/clinics/{id}/audit-events` | `audit_log:read` | Who did what in this clinic (append-only) |
+| GET | `/clinics/{id}/practitioners` | `practitioners:read` | Practitioners (main one first) |
+| POST | `/clinics/{id}/practitioners` | `practitioners:write` |  |
+| PATCH | `/clinics/{id}/practitioners/{practitioner_id}` | `practitioners:write` |  |
+| GET | `/clinics/{id}/presence-profiles` | `presence:read` |  |
+| POST | `/clinics/{id}/presence-profiles` | `presence:write` |  |
+| PATCH | `/clinics/{id}/presence-profiles/{profile_id}` | `presence:write` | Confirm/reject a found profile |
+| GET | `/clinics/{id}/profile` | `profile:read` | Client context: brand, audience, services, ... |
+| PUT | `/clinics/{id}/profile` | `profile:write` |  |
+| GET | `/clinics/{id}/reports` | `reports:read` | Clinic users only see PUBLISHED reports |
+| POST | `/clinics/{id}/reports` | `reports:write` | Register a report version |
+| GET | `/clinics/{id}/reports/{report_id}` | `reports:read` |  |
+| POST | `/clinics/{id}/restore` | `clinics:manage` | Bring an archived clinic back |
+| GET | `/clinics/{id}/snapshots` | `snapshots:read` |  |
+| POST | `/clinics/{id}/snapshots` | `snapshots:write` | Ingest normalized metric snapshots (source, freshness, error/retry state) |
+| POST | `/clinics/{id}/stage` | `clinics:manage` | Move the clinic to a stage |
+| GET | `/clinics/{id}/stage-history` | `clinics:manage` | Every stage move |
+| GET | `/clinics/{id}/team` | `clinics:read` | Clinic-side people and roles |
+| POST | `/clinics/{id}/team` | `team:manage` | Add a Clinic Administrator (sends an invite email) |
+| PATCH | `/clinics/{id}/team/{membership_id}` | `team:manage` | Deactivate or reactivate a team member |
+| POST | `/clinics/{id}/team/{membership_id}/resend-invite` | `team:manage` |  |
+| GET | `/clinics/{id}/work-items` | `work_items:read` |  |
+| POST | `/clinics/{id}/work-items` | `work_items:write` |  |
+| GET | `/clinics/{id}/work-items/{work_item_id}` | `work_items:read` |  |
+| PATCH | `/clinics/{id}/work-items/{work_item_id}` | `work_items:write` | Update status/owner (owner change = handoff) |
+| GET | `/dashboard/summary` | staff only (Admin, DSM) | Dashboard tiles and charts (Admin: all clinics; DSM: their clinics) |
+| GET | `/notifications` | signed in | My in-app notifications |
+| POST | `/notifications/{notification_id}/read` | signed in |  |
+| GET | `/users` | `users:read` | Users screen (status + assigned clinic count) |
+| POST | `/users` | `users:manage` |  |
+| PATCH | `/users/{user_id}` | `users:manage` | Edit or deactivate a user |
+| POST | `/users/{user_id}/resend-invite` | `users:manage` |  |
+
+## 6. Who has which permission
+
+| Permission | Platform Administrator | DSM (own clinics) | Clinic Administrator (own clinic) | Clinic Team Member (own clinic) |
+|---|---|---|---|---|
+| `clinics:create`, `users:read`, `users:manage`, `assignments:manage` | ✅ | only `clinics:create` | — | — |
+| `clinics:read` | ✅ | ✅ | ✅ | ✅ |
+| `clinics:write` (edit clinic details) | ✅ | ✅ | ✅ | — |
+| `clinics:manage` (stages, archive) | ✅ | ✅ | — | — |
+| `team:manage` (add Clinic Administrators / Team Members) | ✅ | ✅ | ✅ | — |
+| `practitioners:read`, `profile:read`, `presence:read`, `assets:read` | ✅ | ✅ | ✅ | ✅ |
+| `practitioners:write`, `profile:write`, `presence:write` | ✅ | ✅ | ✅ | — |
+| `assets:upload` (photos, files) | ✅ | ✅ | ✅ | ✅ |
+| `assessments:read` | ✅ | ✅ | ✅ **published only** | ✅ **published only** |
+| `assessments:request` | ✅ | ✅ | — | — |
+| `approvals:submit`, `approvals:publish` | ✅ | ✅ | — | — |
+| `approvals:decide` | ✅ | ✅ | ✅ but **never on an assessment** | — |
+| `reports:read` | ✅ | ✅ | ✅ published only | ✅ published only |
+| `reports:write`, `snapshots:write`, `work_items:write` | ✅ | ✅ | — | — |
+| `work_items:read`, `snapshots:read` | ✅ | ✅ | ✅ | ✅ |
+| `audit_log:read` (activity log) | ✅ | ✅ | ✅ | — |
+
+Frontends get the caller's exact permissions from `GET /auth/me`. Use them to show or hide
+buttons only; the API always checks again.
+
+---
+
+## 7. Changes on 27 Sep (schema review fixes)
+
+| What | Change for the screens |
+|---|---|
+| Doctors at several branches | `POST …/practitioners` accepts `practitioner_id` to link an existing doctor of the same business (section 3, Practitioners) |
+| Metric numbers | Every snapshot now has `value_number` (e.g. `5432.0`), or `null` when the value is not a plain number (text, true/false, a link). Use it for charts instead of reading `value.value` |
+| Search | `q` on `/clinics` and `/users` treats `%` and `_` as normal characters ("100%" finds "100% Smile" only) and stays fast with thousands of rows |
+| Handoff | 422 when the new owner cannot see the clinic (was 404) |
+| Team | An existing clinic user from another clinic can be added by email |
+
+Nothing was removed or renamed. Regenerate the typed client after pulling (`value_number` and
+`practitioner_id` are new fields).

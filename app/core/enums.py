@@ -1,8 +1,8 @@
 """Platform-wide enumerations.
 
 THE SOURCE OF TRUTH for these values. They are exported to OpenAPI (as named
-schemas) and mirrored in ``packages/shared-types``; a parity test there fails
-if the two drift. Add values freely; renaming or removing a value needs a data
+schemas) in openapi/openapi.json; the frontend generates its TypeScript types from
+that file, so a change here reaches the screens through a new contract release. Add values freely; renaming or removing a value needs a data
 migration and a coordinated frontend change.
 
 Stored in the database as plain strings (``native_enum=False``) so adding a value

@@ -8,7 +8,7 @@ environment-specific is hard-coded. In AWS, the ECS task definition injects:
   no database password at all (short-lived IAM tokens, see app/db/session.py)
 * the one-off MIGRATE task only: DB_USER/DB_PASSWORD from the Aurora-managed master secret
 
-Locally, values come from ``services/api/.env`` (git-ignored; copy ``.env.example``).
+Locally, values come from ``.env`` in the repo root (git-ignored; copy ``.env.example``).
 """
 
 from __future__ import annotations

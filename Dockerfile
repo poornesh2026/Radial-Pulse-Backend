@@ -23,7 +23,7 @@ COPY alembic.ini ./
 # -------------------------------------------------------------- runtime stage
 FROM python:${PYTHON_VERSION}-slim AS runtime
 ARG GIT_SHA=unknown
-LABEL org.opencontainers.image.source="https://github.com/<org>/radial-pulse" \
+LABEL org.opencontainers.image.source="https://github.com/<org>/radial-pulse-backend" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.title="radial-pulse-api"
 ENV PATH="/opt/venv/bin:${PATH}" \

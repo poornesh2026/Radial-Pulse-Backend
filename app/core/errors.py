@@ -20,7 +20,7 @@ class ValidationIssue(BaseModel):
 
 
 class ProblemDetails(BaseModel):
-    """The API's only error shape. Mirrored in packages/shared-types (api.ts)."""
+    """The API's only error shape. Published in openapi/openapi.json (the frontend generates its types from it)."""
 
     type: str
     title: str
