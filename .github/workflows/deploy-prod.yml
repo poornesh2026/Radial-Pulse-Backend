@@ -13,12 +13,13 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   verify:
     name: Release commit is on main
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
     steps:
@@ -26,14 +27,18 @@ jobs:
         with:
           fetch-depth: 0
       - id: sha
+        env:
+          REF: ${{ inputs.ref }} # passed as data, never pasted into the script
         run: |
-          REF="${{ github.event.inputs.ref }}"
-          SHA=$(git rev-parse "$REF^{commit}")
+          SHA=$(git rev-parse --verify --end-of-options "$REF^{commit}")
           git merge-base --is-ancestor "$SHA" origin/main || { echo "::error::$REF is not on main"; exit 1; }
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: verify
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: production

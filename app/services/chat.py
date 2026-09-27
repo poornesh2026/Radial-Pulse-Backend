@@ -94,7 +94,7 @@ def send_message(session: Session, ctx: ClinicContext, data: ChatMessageCreate) 
             sender_side=side,
             body=data.body,
             attachment_asset_id=data.attachment_asset_id,
-            created_at=utcnow(),
+            created_at=repo.stamp_for_new_message(ctx.clinic_id),
         )
     )
     repo.mark_read(ctx.clinic_id, principal.user_id, message.created_at)
@@ -114,7 +114,8 @@ def send_message(session: Session, ctx: ClinicContext, data: ChatMessageCreate) 
 def mark_read(session: Session, ctx: ClinicContext, data: ChatMarkRead) -> None:
     principal = _principal(ctx)
     repo = ChatRepository(session)
-    at = utcnow()
+    # "Everything": up to the newest message there is (its database time), not this server's clock.
+    at = repo.newest_time(ctx.clinic_id) or utcnow()
     if data.up_to_message_id is not None:
         message = repo.get_in_clinic(ctx.clinic_id, data.up_to_message_id)
         if message is None:

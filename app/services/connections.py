@@ -186,7 +186,7 @@ def complete(
     provider = provider_for(platform, settings)
     if provider is None:
         raise ServiceUnavailableError(f"{PLATFORM_LABELS[platform]} connection is not set up yet")
-    row = ConnectionRepository(session).get(ctx.clinic_id, platform)
+    row = ConnectionRepository(session).get(ctx.clinic_id, platform, for_update=True)
     if row is None or row.oauth_state_hash is None or row.oauth_redirect_uri is None:
         raise InvalidStateError("No connection is in progress. Press Connect again.")
     if not hmac.compare_digest(_hash(data.state), row.oauth_state_hash):
@@ -198,9 +198,10 @@ def complete(
 
     def give_up(message: str, status_if_new: ConnectionStatus) -> None:
         _clear_sign_in(current)
-        if current.status is ConnectionStatus.PENDING:
+        if current.status is ConnectionStatus.PENDING:  # a first Connect: show why it failed
             current.status = status_if_new
-        current.last_error = message
+            current.last_error = message
+        # A reconnect that failed leaves the working connection (and its card) as it was.
         session.commit()
 
     if _sign_in_expired(row, settings):

@@ -34,8 +34,9 @@ class ChatMessage(UUIDPrimaryKeyMixin, Base):
     sender_name: Mapped[str] = mapped_column(String(200))
     sender_side: Mapped[ChatSide] = mapped_column(str_enum(ChatSide, length=16))
     body: Mapped[str | None] = mapped_column(Text)
+    #: RESTRICT: a file that was sent in the chat cannot be hard-deleted from under the message.
     attachment_asset_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("assets.id", ondelete="SET NULL")
+        ForeignKey("assets.id", ondelete="RESTRICT")
     )
     created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=func.now())
 

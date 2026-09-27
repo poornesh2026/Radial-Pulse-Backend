@@ -54,5 +54,8 @@ class AwsSecretStore:
     def delete(self, ref: str) -> None:
         try:
             self._client.delete_secret(SecretId=ref, RecoveryWindowInDays=7)
-        except self._client.exceptions.ResourceNotFoundException:
+        except (
+            self._client.exceptions.ResourceNotFoundException,
+            self._client.exceptions.InvalidRequestException,  # already scheduled for deletion
+        ):
             return

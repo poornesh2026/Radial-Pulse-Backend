@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
-from app.core.enums import DataSource, PublicationState
+from app.core.enums import DataSource, PublicationState, SnapshotStatus
 from app.models import MetricSnapshot, ReportArtifact
 from app.repositories.base import Repository
 
@@ -32,20 +32,21 @@ class SnapshotRepository(Repository):
         if source is not None:
             stmt = stmt.where(MetricSnapshot.source == source)
         if latest:
-            # Only the newest value of each metric (e.g. the numbers on the Social Media cards).
-            newest = (
-                select(
-                    MetricSnapshot.id.label("snapshot_id"),
-                    func.row_number()
-                    .over(
-                        partition_by=MetricSnapshot.metric_key,
-                        order_by=(MetricSnapshot.fetched_at.desc(), MetricSnapshot.id.desc()),
-                    )
-                    .label("rn"),
+            # Only the newest GOOD value of each metric per source (e.g. the Social Media cards).
+            candidates = select(
+                MetricSnapshot.id.label("snapshot_id"),
+                func.row_number()
+                .over(
+                    partition_by=(MetricSnapshot.source, MetricSnapshot.metric_key),
+                    order_by=(MetricSnapshot.fetched_at.desc(), MetricSnapshot.id.desc()),
                 )
-                .where(MetricSnapshot.clinic_id == clinic_id)
-                .subquery()
-            )
+                .label("rn"),
+            ).where(MetricSnapshot.clinic_id == clinic_id, MetricSnapshot.status == SnapshotStatus.OK)
+            if metric_key is not None:
+                candidates = candidates.where(MetricSnapshot.metric_key == metric_key)
+            if source is not None:
+                candidates = candidates.where(MetricSnapshot.source == source)
+            newest = candidates.subquery()
             stmt = stmt.join(newest, (newest.c.snapshot_id == MetricSnapshot.id) & (newest.c.rn == 1))
         return self.paginate(
             stmt.order_by(MetricSnapshot.fetched_at.desc(), MetricSnapshot.id), limit, offset

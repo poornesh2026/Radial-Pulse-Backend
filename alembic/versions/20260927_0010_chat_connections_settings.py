@@ -34,7 +34,7 @@ depends_on: str | Sequence[str] | None = None
 
 APP_ROLE = "radial_app"
 IN_SCOPE = "(rp_all_clinics() OR clinic_id = ANY (rp_clinic_ids()))"
-MINE = "(rp_all_clinics() OR user_id = rp_user_id())"
+MINE = "(user_id = rp_user_id())"  # strictly your own — not even the all-clinics scope
 
 ASSET_KINDS = [
     "clinic_photo",
@@ -99,7 +99,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["attachment_asset_id"], ["assets.id"], name=op.f("fk_chat_messages_attachment_asset_id_assets"),
-            ondelete="SET NULL",
+            ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_chat_messages")),
     )  # fmt: skip

@@ -100,9 +100,12 @@ jobs:
       - name: A changed contract needs a new version and a CHANGELOG line
         if: github.event_name == 'pull_request'
         run: |
-          BASE="origin/${{ github.base_ref }}"
+          BASE="origin/${GITHUB_BASE_REF}"
           if git diff --quiet "$BASE"...HEAD -- openapi/openapi.json; then
             echo "Contract unchanged."; exit 0
+          fi
+          if ! git cat-file -e "$BASE":openapi/openapi.json 2>/dev/null; then
+            echo "First contract on this branch — no version bump needed."; exit 0
           fi
           version() { grep -Eo 'CONTRACT_VERSION = "[^"]+"' | cut -d'"' -f2; }
           OLD=$(git show "$BASE":app/core/contract.py 2>/dev/null | version || true)
@@ -111,14 +114,14 @@ jobs:
           if [ -n "$OLD" ] && [ "$OLD" = "$NEW" ]; then
             echo "::error::openapi.json changed but CONTRACT_VERSION is still $NEW. Bump it (app/core/contract.py)."; exit 1
           fi
-          if ! grep -q "## v$NEW" openapi/CHANGELOG.md; then
+          if ! grep -qF "## v$NEW" openapi/CHANGELOG.md; then
             echo "::error::Add a '## v$NEW' section to openapi/CHANGELOG.md saying what changed for the screens."; exit 1
           fi
       - name: Breaking changes report (information for the reviewer)
         if: github.event_name == 'pull_request'
         continue-on-error: true
         run: |
-          git show "origin/${{ github.base_ref }}":openapi/openapi.json > /tmp/base.json 2>/dev/null || exit 0
+          git show "origin/${GITHUB_BASE_REF}":openapi/openapi.json > /tmp/base.json 2>/dev/null || exit 0
           docker run --rm -v /tmp:/base -v "$PWD/openapi":/rev tufin/oasdiff breaking /base/base.json /rev/openapi.json
 
   # ----------------------------------------------------------------------- security

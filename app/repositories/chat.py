@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select, tuple_
+from sqlalchemy import and_, func, or_, select, text, tuple_
 
 from app.models import ChatMessage, ChatReadState, Clinic
 from app.repositories.base import Repository
@@ -27,6 +27,26 @@ class ChatRepository(Repository):
     """All chat SQL. Every method takes the clinic id(s) it may touch."""
 
     # ------------------------------------------------------------------ messages
+    def stamp_for_new_message(self, clinic_id: UUID) -> datetime:
+        """The time for a new message, safe for polling.
+
+        Polling asks for "messages after the last one I have". That only works if a message can
+        never appear later with an OLDER time. So on PostgreSQL we (1) let one sender at a time
+        write into a clinic's chat (a lock held until COMMIT) and (2) take the time from the
+        database clock, not from each server's own clock.
+        """
+        if self.session.get_bind().dialect.name != "postgresql":
+            return datetime.now(UTC)
+        self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"chat:{clinic_id}"}
+        )
+        return _aware(self.session.scalar(text("SELECT clock_timestamp()")))
+
+    def newest_time(self, clinic_id: UUID) -> datetime | None:
+        return self.session.scalar(
+            select(func.max(ChatMessage.created_at)).where(ChatMessage.clinic_id == clinic_id)
+        )
+
     def get_in_clinic(self, clinic_id: UUID, message_id: UUID) -> ChatMessage | None:
         return self.session.scalar(
             select(ChatMessage).where(ChatMessage.clinic_id == clinic_id, ChatMessage.id == message_id)

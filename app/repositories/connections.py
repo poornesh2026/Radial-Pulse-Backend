@@ -15,9 +15,11 @@ class ConnectionRepository(Repository):
             self.session.scalars(select(PlatformConnection).where(PlatformConnection.clinic_id == clinic_id))
         )
 
-    def get(self, clinic_id: UUID, platform: ConnectionPlatform) -> PlatformConnection | None:
-        return self.session.scalar(
-            select(PlatformConnection).where(
-                PlatformConnection.clinic_id == clinic_id, PlatformConnection.platform == platform
-            )
+    def get(
+        self, clinic_id: UUID, platform: ConnectionPlatform, *, for_update: bool = False
+    ) -> PlatformConnection | None:
+        """``for_update`` locks the row until COMMIT (two "complete" calls cannot both use one state)."""
+        stmt = select(PlatformConnection).where(
+            PlatformConnection.clinic_id == clinic_id, PlatformConnection.platform == platform
         )
+        return self.session.scalar(stmt.with_for_update() if for_update else stmt)

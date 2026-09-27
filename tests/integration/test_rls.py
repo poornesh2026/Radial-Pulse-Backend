@@ -547,3 +547,25 @@ def test_notification_switches_are_private_but_senders_can_check_them(db, sessio
         cat, ch = NotificationCategory.WORK_ITEM_ASSIGNED, NotificationChannel.IN_APP
         assert repo.notification_enabled(priya.id, cat, ch) is False
         assert repo.notification_enabled(rahul.id, cat, ch) is True  # default: on
+
+
+def test_even_the_all_clinics_scope_sees_only_its_own_switches(db, session_factory) -> None:  # type: ignore[no-untyped-def]
+    from app.core.enums import NotificationCategory, NotificationChannel
+    from app.db.tenant import set_current_user
+    from app.models import NotificationPreference
+
+    admin = make_user(db, PlatformRole.PLATFORM_ADMINISTRATOR)
+    priya = make_user(db, PlatformRole.DIGITAL_SUCCESS_MANAGER)
+    db.add(
+        NotificationPreference(
+            user_id=priya.id,
+            category=NotificationCategory.CLINIC_ASSIGNED,
+            channel=NotificationChannel.EMAIL,
+            enabled=False,
+        )
+    )
+    db.commit()
+    with session_factory() as s:
+        set_current_user(s, admin.id, is_staff=True)
+        set_tenant_scope(s, None)  # Platform Administrator: every clinic
+        assert s.query(NotificationPreference).count() == 0

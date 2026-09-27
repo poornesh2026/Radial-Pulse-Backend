@@ -10,11 +10,18 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   deploy:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    permissions:
+      contents: read
+      id-token: write
+    # Only a PUSH to main in THIS repo (never a pull request, never a fork's branch called main).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: dev
