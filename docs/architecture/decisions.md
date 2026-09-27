@@ -57,9 +57,10 @@ Full detail: [database-schema.md](database-schema.md), section 0.
    sections (`methodology_version 2026.09-v0`). The product owner must approve weights,
    section list and what a "partial" assessment shows to clinics.
 2. **Role → permission table** (`app/core/rbac.py`, [multi-tenancy.md](multi-tenancy.md)).
-   Open points: may a Clinic Administrator add other Clinic Administrators (`team:manage`,
-   today: no — staff only)? May a Digital Success Manager read the user list (today: no)?
+   Open points: may a Digital Success Manager read the user list (today: no)?
    May a Digital Success Manager create clinics (today: yes, and is auto-assigned)?
+   (Decided in D14: a Clinic Administrator may add other Clinic Administrators and
+   Clinic Team Members to their own clinic.)
 3. **Clinic Team Member** — DECIDED (Sep 2026): view-only in their own clinic plus uploading
    photos/files; granted by the Admin, the clinic's DSM or a Clinic Administrator.
 4. **Four-eyes rule** — should the person who submits an assessment be blocked from approving it?

@@ -114,8 +114,9 @@ CLINIC_ROLE_PERMISSIONS: Mapping[ClinicRole, frozenset[Permission]] = {
         {
             P.CLINICS_READ,
             P.CLINICS_WRITE,
-            #: May add OTHER Clinic Administrators to their own clinic (decision D14).
-            #: Only GRANTABLE_CLINIC_ROLES can be granted, so no staff logins yet.
+            #: May add other Clinic Administrators and Clinic Team Members to their own clinic
+            #: (decision D14). Only GRANTABLE_CLINIC_ROLES can be granted: never a Radial Pulse
+            #: role (Platform Administrator, DSM).
             P.TEAM_MANAGE,
             P.PRACTITIONERS_READ,
             P.PRACTITIONERS_WRITE,
@@ -155,7 +156,8 @@ CLINIC_ROLE_PERMISSIONS: Mapping[ClinicRole, frozenset[Permission]] = {
             P.REPORTS_READ,  # published only
             P.WORK_ITEMS_READ,
             P.SNAPSHOTS_READ,
-            #: Reads the clinic chat; only Clinic Administrators and staff send (decision D18).
+            #: Reads the clinic chat; only Clinic Administrators, DSMs and Platform
+            #: Administrators send (decision D18).
             P.CHAT_READ,
             P.CONNECTIONS_READ,
         }

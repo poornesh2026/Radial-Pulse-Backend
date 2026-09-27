@@ -7,11 +7,11 @@ Errors are always problem+json: `{ "type", "title", "status", "detail" }`.
 **404 = no access to that clinic (or it does not exist). 403 = you can see it but may not do this.
 409 = not allowed in the current state (the `detail` says why, in plain words).**
 
-After pulling this branch, regenerate the typed client:
+After pulling this branch, regenerate the contract. The frontend repo then builds its typed
+client from this file (how is up to Person 2).
 
 ```bash
 make openapi            # writes openapi/openapi.json
-make openapi    # writes the real schema.d.ts
 ```
 
 ---
