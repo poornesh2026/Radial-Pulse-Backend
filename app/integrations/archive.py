@@ -29,7 +29,7 @@ class S3ArchiveStore:
         self._kms_key_id = kms_key_id
 
     def put(self, key: str, body: bytes) -> None:
-        extra: dict[str, str] = {"ServerSideEncryption": "aws:kms"}
+        extra: dict[str, Any] = {"ServerSideEncryption": "aws:kms"}
         if self._kms_key_id:
             extra["SSEKMSKeyId"] = self._kms_key_id
         self._s3.put_object(

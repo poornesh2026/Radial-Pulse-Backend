@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, func, select
+from sqlalchemy.orm import InstrumentedAttribute
 
 from app.core.enums import AssessmentStatus, ClinicStage, PublicationState
 from app.models import Assessment, Clinic, WorkItem
@@ -21,7 +22,7 @@ class DashboardRepository(Repository):
         super().__init__(session)
         self._ids = None if clinic_ids is None else list(clinic_ids)
 
-    def _scope(self, column: Any) -> ColumnElement[bool]:
+    def _scope(self, column: InstrumentedAttribute[UUID]) -> ColumnElement[bool]:
         return column.in_(self._ids) if self._ids is not None else column.is_not(None)
 
     @property

@@ -16,7 +16,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.v1.routers._common import ERRORS
+from app.api.v1.routers._common import ERRORS, ErrorResponses
 from app.core.config import Settings
 from app.core.enums import ConnectionPlatform
 from app.core.errors import ProblemDetails
@@ -36,9 +36,15 @@ from app.services import connections as service
 
 router = APIRouter(prefix="/clinics/{clinic_id}/connections", tags=["connections"], responses=ERRORS)
 
-_NOT_SET_UP = {503: {"model": ProblemDetails, "description": "This platform is not set up yet"}}
-_STATE = {409: {"model": ProblemDetails, "description": "No sign-in in progress, or it took too long"}}
-_UPSTREAM = {502: {"model": ProblemDetails, "description": "The platform refused the sign-in"}}
+_NOT_SET_UP: ErrorResponses = {
+    503: {"model": ProblemDetails, "description": "This platform is not set up yet"}
+}
+_STATE: ErrorResponses = {
+    409: {"model": ProblemDetails, "description": "No sign-in in progress, or it took too long"}
+}
+_UPSTREAM: ErrorResponses = {
+    502: {"model": ProblemDetails, "description": "The platform refused the sign-in"}
+}
 
 
 @router.get("", response_model=list[ConnectionRead], summary="Every platform with its connection status")

@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.routers._common import ERRORS, Limit, Offset
+from app.api.v1.routers._common import ERRORS, ErrorResponses, Limit, Offset
 from app.core.config import Settings
 from app.core.enums import ClinicStage
 from app.core.errors import ProblemDetails
@@ -32,7 +32,9 @@ from app.services import clinics as service
 
 router = APIRouter(prefix="/clinics", tags=["clinics"], responses=ERRORS)
 
-STATE_ERROR = {409: {"model": ProblemDetails, "description": "Not allowed in the clinic's current state"}}
+STATE_ERROR: ErrorResponses = {
+    409: {"model": ProblemDetails, "description": "Not allowed in the clinic's current state"}
+}
 
 
 @router.get(

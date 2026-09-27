@@ -144,7 +144,7 @@ class ChatRepository(Repository):
             .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
             .limit(limit)
         )
-        rows = list(self.session.execute(stmt).tuples())
+        rows = list(self.session.execute(stmt))
         unread = self.unread_counts([m.clinic_id for m, _ in rows], user_id)
         return [
             ThreadSummary(

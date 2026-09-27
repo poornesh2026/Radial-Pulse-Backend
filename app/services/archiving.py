@@ -55,7 +55,7 @@ TARGETS = {
     "metric_snapshots": ArchiveTarget(MetricSnapshot.__table__, MetricSnapshot.__table__.c.fetched_at),  # type: ignore[arg-type]
     "audit_events": ArchiveTarget(
         AuditEvent.__table__,  # type: ignore[arg-type]
-        AuditEvent.__table__.c.occurred_at,
+        AuditEvent.__table__.c.occurred_at,  # type: ignore[arg-type]
         needs_archive_flag=True,
     ),
 }

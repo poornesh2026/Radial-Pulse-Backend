@@ -93,6 +93,7 @@ Metrics for these profiles go to `metric_snapshots` (`source` = the platform).
 from app.assessments.engines import AssessmentEngine, ComponentResult, EngineInput
 from app.core.enums import AssessmentComponentKey, ComponentStatus
 
+
 class GbpEngine:
     name = "gbp-engine"
     version = "0.1.0"
