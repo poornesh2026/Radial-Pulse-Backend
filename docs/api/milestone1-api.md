@@ -360,8 +360,9 @@ Nothing was removed or renamed. Regenerate the typed client after pulling (`valu
 
 ## 8. Contract v0.1.0 (27 Sep): chat, connected accounts, settings
 
-The first versioned contract. How the screens use the new routes (polling, the Connect flow,
-the photo upload): [for-frontend.md](for-frontend.md). Other changes:
+The first versioned contract. Chat: poll `GET …/chat/messages?after=<last id>` for new
+messages. Connect: `…/start` returns the sign-in address; after the platform sends the clinic
+back with `code` and `state`, call `…/complete`. Other changes:
 
 - `GET /auth/me` adds `avatar_url`, `sign_in_method` (`google`), `last_login_at`.
 - `GET /clinics/{id}/snapshots?latest=true` returns only the newest value of each metric.

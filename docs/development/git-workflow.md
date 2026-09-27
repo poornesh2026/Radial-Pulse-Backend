@@ -4,9 +4,8 @@ Simple trunk-based flow. No `develop` branch, no release branches.
 
 ```mermaid
 flowchart LR
-  B[feature/… branch] --> PR[Pull request] --> CI[CI: lint, tests, contract] --> R[Review<br/>CODEOWNERS] --> M[Merge to main] --> D[Auto deploy to DEV]
+  B[feature/… branch] --> PR[Pull request] --> CI[CI: lint, tests, contract] --> R[Review<br/>CODEOWNERS] --> M[Merge to main]
   M --> T[Tag vX.Y.Z] --> C[Contract release<br/>for the frontend]
-  M --> P[Deploy PROD<br/>by hand + approval]
 ```
 
 ## Branches
@@ -45,6 +44,4 @@ security scans, Docker build) run in CI.
 (the tag must equal `CONTRACT_VERSION`). GitHub creates the release with `openapi.json`.
 See [contract-versioning](../api/contract-versioning.md).
 
-**PROD:** Actions → *Deploy PROD* → Run workflow with the tag or SHA (must be on `main`,
-already running in DEV). A reviewer approves the `production` environment. The pipeline builds,
-migrates, rolls out and smoke-tests; ECS rolls back automatically if the new tasks fail.
+Deploying to DEV/PROD is owned by DevOps and is not part of this repo yet.

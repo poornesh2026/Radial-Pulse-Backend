@@ -14,7 +14,7 @@ there apply to humans too.
 1. Branch from `main` (`feature/…`, `fix/…`, `chore/…`, `docs/…`).
 2. Make the change, add tests, run `make check` (+ `make integration-test` for DB changes).
 3. API changed? `make openapi`, bump `CONTRACT_VERSION`, add a line to `openapi/CHANGELOG.md`.
-4. Open a PR. CI must pass (`CI passed`). One review. Squash-merge. DEV deploys automatically.
+4. Open a PR. CI must pass (`CI passed`). One review. Squash-merge.
 5. Contract ready for the frontend? Tag it: `git tag v0.2.0 && git push origin v0.2.0`.
 
 ## Naming

@@ -36,10 +36,10 @@ git commit -m "chore(contract): first contract v0.1.0 and uv.lock"
 git remote add origin git@github.com:<org>/radial-pulse-backend.git
 git push -u origin main
 # when CI is green:
-git tag v0.1.0 && git push origin v0.1.0     # → release "API contract v0.1.0" for Person 2
+git tag v0.1.0 && git push origin v0.1.0     # → release "API contract v0.1.0"
 ```
 
-Person 3's part (OIDC trust, IAM, settings): [docs/infrastructure/backend-repo-aws-changes.md](docs/infrastructure/backend-repo-aws-changes.md).
+What the backend needs from AWS (to share with the DevOps owner): [docs/infrastructure/backend-aws-needs.md](docs/infrastructure/backend-aws-needs.md).
 
 ## First time on your machine
 
@@ -63,25 +63,16 @@ make migration NAME="add x"  # new migration after changing models — READ the 
 make openapi                 # regenerate the contract after changing routes/schemas
 ```
 
-## The API contract (how the frontend gets it)
+## The API contract
 
 1. Change routes or schemas → `make openapi` → bump `CONTRACT_VERSION` in
    `app/core/contract.py` → add a `## vX.Y.Z` section to `openapi/CHANGELOG.md` → pull request.
    CI fails if `openapi.json` is stale or the version was not bumped.
 2. After merging: `git tag vX.Y.Z && git push origin vX.Y.Z`. GitHub Actions creates the
    release **"API contract vX.Y.Z"** with `openapi.json` attached.
-3. The frontend runs its `api:sync` (see [docs/api/for-frontend.md](docs/api/for-frontend.md)).
+3. Share the release with the frontend team. How they use it is up to them.
 
 Rules for version numbers: [docs/api/contract-versioning.md](docs/api/contract-versioning.md).
-
-## Deploying
-
-| Where | How |
-|---|---|
-| DEV | automatically after CI passes on `main` |
-| PROD | Actions → **Deploy PROD** → Run workflow with a tag, then a reviewer approves |
-
-A tag publishes the contract only; it never deploys PROD by itself.
 
 ## Layers (one direction only)
 
@@ -113,5 +104,5 @@ is the second net on **every** table (`tests/integration/test_rls.py` fails if a
 - Architecture and decisions: [docs/architecture](docs/architecture) (start with `database-schema-simple.md`)
 - All routes and who may call them: [docs/api/milestone1-api.md](docs/api/milestone1-api.md)
 - Chat, connected accounts, settings: [docs/architecture/chat-connections-settings.md](docs/architecture/chat-connections-settings.md)
-- AWS changes Person 3 needs for this repo: [docs/infrastructure/backend-repo-aws-changes.md](docs/infrastructure/backend-repo-aws-changes.md)
+- What the backend needs from AWS: [docs/infrastructure/backend-aws-needs.md](docs/infrastructure/backend-aws-needs.md)
 - Rules for AI coding agents: [AGENTS.md](AGENTS.md)

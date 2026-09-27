@@ -93,7 +93,7 @@ Full detail: [database-schema.md](database-schema.md), section 0.
     whether audit files use S3 Object Lock. Needs a business/legal decision before PROD.
 20. **Separate backend repo** — DECIDED (Sep 2026): the frontend has its own repo, so the API
     moved to `radial-pulse-backend` (history kept). The contract is published as GitHub Releases
-    (`vX.Y.Z` with `openapi.json`); PROD deploys are started by hand. The monorepo's
+    (`vX.Y.Z` with `openapi.json`). Deployment workflows are left to DevOps. The monorepo's
     `services/api` stops being used once the team switches.
 21. **Connected accounts** — BUILT (migration 0010): OAuth for Google (GBP, YouTube), Meta
     (Instagram, Facebook), LinkedIn and X, read-only scopes; tokens only in Secrets Manager (one

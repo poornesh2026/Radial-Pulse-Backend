@@ -3,8 +3,8 @@
 | Environment | Where        | Database                          | Auth              | Deploys                   |
 | ----------- | ------------ | --------------------------------- | ----------------- | ------------------------- |
 | **LOCAL**   | your machine | Docker PostgreSQL 16              | DEV Cognito pool  | —                         |
-| **DEV**     | AWS (dev)    | Aurora Serverless v2 (auto-pause) | DEV Cognito pool  | automatically from `main` |
-| **PROD**    | AWS (prod)   | Aurora Serverless v2, 2 instances | PROD Cognito pool | tag + human approval      |
+| **DEV**     | AWS (dev)    | Aurora Serverless v2 (auto-pause) | DEV Cognito pool  | set up by DevOps          |
+| **PROD**    | AWS (prod)   | Aurora Serverless v2, 2 instances | PROD Cognito pool | set up by DevOps          |
 
 DEV and PROD share **nothing**: separate VPC, database, bucket, user pool, KMS key,
 secrets, logs, alarms, budget and IAM roles (ideally separate AWS accounts).

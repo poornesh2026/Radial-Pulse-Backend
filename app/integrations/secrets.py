@@ -3,8 +3,8 @@
 One secret per clinic + platform, named ``<prefix>/<env>/connections/<clinic_id>/<platform>``,
 encrypted with the environment's KMS key. The database keeps only the secret's ARN.
 
-IAM (Person 3): the API task role may Create/Put/Restore/Delete/Describe/Tag secrets under
-that name prefix; the worker (data-sync jobs) may only GetSecretValue on it.
+AWS permissions needed: docs/infrastructure/backend-aws-needs.md. The API may create, update,
+restore and delete secrets under that name prefix; the worker may only read them.
 """
 
 from __future__ import annotations

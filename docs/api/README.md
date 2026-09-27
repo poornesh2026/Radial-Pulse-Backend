@@ -62,8 +62,7 @@ git add openapi app/core/contract.py # commit the regenerated contract in the SA
 ```
 
 CI regenerates the contract and fails if the committed copy is stale or the version was not
-bumped. Releasing it to the frontend: [contract-versioning.md](contract-versioning.md) ·
-how the frontend consumes it: [for-frontend.md](for-frontend.md).
+bumped. Releasing it to the frontend: [contract-versioning.md](contract-versioning.md).
 
 ## Rules for new endpoints
 

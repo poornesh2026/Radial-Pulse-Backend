@@ -102,4 +102,4 @@ switches are private (row-level security), the check uses the database function
 3. **Secrets cost** — one Secrets Manager secret per connected account (~USD 0.40/month each).
    Fine for the pilot; at scale, one secret per clinic would be cheaper.
 4. Meta and LinkedIn need an **app review** before real clinics can grant these permissions.
-   Start the reviews early (Person 3 + product).
+   Start the reviews early.

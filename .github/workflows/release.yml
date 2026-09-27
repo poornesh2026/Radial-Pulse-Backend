@@ -6,7 +6,7 @@
 #   3. This workflow checks everything matches and creates the GitHub Release
 #      "API contract vX.Y.Z" with openapi.json attached. The frontend runs `api:sync`.
 #
-# A release is ONLY the contract. Deploying to PROD is a separate, manual workflow (deploy-prod.yml).
+# A release is ONLY the contract. Deployment is set up separately (DevOps).
 name: Release API contract
 
 on:
