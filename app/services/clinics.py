@@ -25,6 +25,7 @@ from app.models import (
     Clinic,
     ClinicAssignment,
     ClinicMembership,
+    ClinicPractitioner,
     ClinicProfile,
     ClinicStageHistory,
     Notification,
@@ -51,6 +52,7 @@ from app.schemas.clinics import (
     ClinicUpdate,
     PersonRef,
     PractitionerCreate,
+    PractitionerRead,
     PractitionerUpdate,
     StageChange,
     TeamMemberCreate,
@@ -148,9 +150,10 @@ def create_clinic(session: Session, principal: Principal, data: ClinicCreate) ->
         )
     )  # fmt: skip
     if data.primary_practitioner_name:
-        session.add(
-            Practitioner(clinic_id=clinic.id, full_name=data.primary_practitioner_name, is_primary=True)
-        )
+        person = Practitioner(organization_id=org.id, full_name=data.primary_practitioner_name)
+        session.add(person)
+        session.flush()
+        session.add(ClinicPractitioner(clinic_id=clinic.id, practitioner_id=person.id, is_primary=True))
     if principal.platform_role is PlatformRole.DIGITAL_SUCCESS_MANAGER:
         session.add(
             ClinicAssignment(
@@ -268,57 +271,105 @@ def restore_clinic(session: Session, ctx: ClinicContext) -> Clinic:
 
 
 # ----------------------------------------------------------------- practitioners
+def _practitioner_read(link: ClinicPractitioner, person: Practitioner) -> PractitionerRead:
+    return PractitionerRead(
+        id=person.id,
+        clinic_id=link.clinic_id,
+        full_name=person.full_name,
+        specialty=person.specialty,
+        qualifications=person.qualifications,
+        registration_number=person.registration_number,
+        bio=person.bio,
+        is_primary=link.is_primary,
+        user_id=person.user_id,
+        is_active=link.is_active,
+        created_at=link.created_at,
+    )
+
+
 def list_practitioners(
     session: Session, ctx: ClinicContext, limit: int, offset: int
-) -> tuple[list[Practitioner], int]:
-    return PractitionerRepository(session).list_for_clinic(ctx.clinic_id, limit, offset)
+) -> tuple[list[PractitionerRead], int]:
+    rows, total = PractitionerRepository(session).list_for_clinic(ctx.clinic_id, limit, offset)
+    return [_practitioner_read(link, person) for link, person in rows], total
 
 
-def create_practitioner(session: Session, ctx: ClinicContext, data: PractitionerCreate) -> Practitioner:
-    if data.user_id is not None:
-        _require_clinic_member(session, ctx.clinic_id, data.user_id)
+def create_practitioner(session: Session, ctx: ClinicContext, data: PractitionerCreate) -> PractitionerRead:
+    """Add a NEW practitioner to this clinic, or link one who works at a sibling branch."""
     repo = PractitionerRepository(session)
+    clinic = get_clinic(session, ctx)
+    if data.practitioner_id is not None:
+        person = repo.get_person(data.practitioner_id)
+        # Only a doctor of the SAME business can be linked (never another client's record).
+        if person is None or person.organization_id != clinic.organization_id:
+            raise NotFoundError("Practitioner not found in this business")
+        existing = repo.get_in_clinic(ctx.clinic_id, person.id)
+        if existing is not None:
+            raise ConflictError(
+                "Already works at this clinic"
+                if existing[0].is_active
+                else "Was removed from this clinic. Reactivate them instead"
+            )
+        action = "practitioner.link"
+    else:
+        if data.user_id is not None:
+            _require_clinic_member(session, ctx.clinic_id, data.user_id)
+        person = Practitioner(
+            organization_id=clinic.organization_id,
+            **data.model_dump(exclude={"practitioner_id", "is_primary"}),
+        )
+        session.add(person)
+        session.flush()
+        action = "practitioner.create"
     if data.is_primary:
         repo.clear_primary(ctx.clinic_id)
-    practitioner = Practitioner(clinic_id=ctx.clinic_id, **data.model_dump())
-    session.add(practitioner)
+    link = ClinicPractitioner(clinic_id=ctx.clinic_id, practitioner_id=person.id, is_primary=data.is_primary)
+    session.add(link)
     session.flush()
     audit.record(
         session,
         actor=ctx.principal,
-        action="practitioner.create",
+        action=action,
         resource_type="practitioner",
-        resource_id=practitioner.id,
+        resource_id=person.id,
         clinic_id=ctx.clinic_id,
         details={"is_primary": data.is_primary},
     )
     session.commit()
-    return practitioner
+    return _practitioner_read(link, person)
+
+
+PERSON_FIELDS = ("full_name", "specialty", "qualifications", "registration_number", "bio")
+LINK_FIELDS = ("is_primary", "is_active")
 
 
 def update_practitioner(
     session: Session, ctx: ClinicContext, practitioner_id: UUID, data: PractitionerUpdate
-) -> Practitioner:
+) -> PractitionerRead:
     repo = PractitionerRepository(session)
-    practitioner = repo.get_in_clinic(ctx.clinic_id, practitioner_id)
-    if practitioner is None:
+    found = repo.get_in_clinic(ctx.clinic_id, practitioner_id)
+    if found is None:
         raise NotFoundError("Practitioner not found")
+    link, person = found
     changes = data.model_dump(exclude_unset=True)
-    if changes.get("is_primary") and not practitioner.is_primary:
-        repo.clear_primary(ctx.clinic_id)
+    if changes.get("is_primary") and not (link.is_primary and link.is_active):
+        repo.clear_primary(ctx.clinic_id)  # explicitly made the main one
+    elif changes.get("is_active") and not link.is_active and link.is_primary:
+        # Coming back to the clinic: someone else may be the main practitioner by now.
+        link.is_primary = False
     for field, value in changes.items():
-        setattr(practitioner, field, value)
+        setattr(person if field in PERSON_FIELDS else link, field, value)
     audit.record(
         session,
         actor=ctx.principal,
         action="practitioner.update",
         resource_type="practitioner",
-        resource_id=practitioner.id,
+        resource_id=person.id,
         clinic_id=ctx.clinic_id,
         details={"fields": sorted(changes)},
     )
     session.commit()
-    return practitioner
+    return _practitioner_read(link, person)
 
 
 # -------------------------------------------------------------------------- team
@@ -350,8 +401,11 @@ def add_team_member(
     if data.role not in GRANTABLE_CLINIC_ROLES:
         raise DomainValidationError(f"The {data.role.value} role is not available yet")
     users = UserRepository(session)
-    user = users.get_by_email(data.email)
-    if user is None:
+    # An existing account may belong to ANOTHER clinic we cannot see (row-level security on
+    # users): look it up by email with the narrow lookup, and load it only once it is on our team.
+    match = users.find_by_email(data.email)
+    user: User | None = None
+    if match is None:
         user = User(
             email=data.email,
             full_name=data.full_name,
@@ -360,11 +414,14 @@ def add_team_member(
         )
         session.add(user)
         session.flush()
-    elif user.platform_role is not PlatformRole.CLINIC_USER:
+        user_id = user.id
+    elif match.platform_role is not PlatformRole.CLINIC_USER:
         raise ConflictError("That email belongs to a Radial Pulse staff account")
+    else:
+        user_id = match.id
 
     memberships = MembershipRepository(session)
-    existing = memberships.get(ctx.clinic_id, user.id)
+    existing = memberships.get(ctx.clinic_id, user_id)
     if existing is not None:
         raise ConflictError(
             "This person is already on the clinic team"
@@ -372,10 +429,14 @@ def add_team_member(
             else "This person was removed from the team. Reactivate them instead"
         )
     membership = ClinicMembership(
-        clinic_id=ctx.clinic_id, user_id=user.id, role=data.role, invited_by_user_id=ctx.principal.user_id
+        clinic_id=ctx.clinic_id, user_id=user_id, role=data.role, invited_by_user_id=ctx.principal.user_id
     )
     session.add(membership)
     session.flush()
+    if user is None:
+        user = users.get(user_id)  # visible now: they are on this clinic's team
+        if user is None:  # pragma: no cover - the membership row makes it visible
+            raise NotFoundError("Account not found")
     audit.record(
         session,
         actor=ctx.principal,
@@ -383,7 +444,7 @@ def add_team_member(
         resource_type="clinic_membership",
         resource_id=membership.id,
         clinic_id=ctx.clinic_id,
-        details={"role": data.role.value, "user_id": str(user.id)},
+        details={"role": data.role.value, "user_id": str(user_id)},
     )
     session.commit()
     if user.cognito_sub is None:

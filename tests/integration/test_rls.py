@@ -15,27 +15,21 @@ from sqlalchemy.exc import DBAPIError
 
 from app.core.enums import ClinicRole, ClinicStage, PlatformRole
 from app.db.tenant import set_tenant_scope
-from app.models import AuditEvent, ClinicAssignment, ClinicStageHistory, Practitioner
+from app.models import AuditEvent, ClinicAssignment, ClinicPractitioner, ClinicStageHistory, Practitioner
 from tests.conftest import API_ROOT, TEST_DATABASE_URL
 from tests.factories import add_member, assign, make_clinic, make_practitioner, make_user
 
 pytestmark = pytest.mark.integration
 
-#: Tables deliberately NOT under RLS (read before a tenant scope exists, or per-recipient).
-NOT_TENANT_SCOPED = {"users", "organizations", "clinic_memberships", "clinic_assignments", "notifications"}
 
-
-def test_every_clinic_scoped_table_has_row_level_security(engines) -> None:  # type: ignore[no-untyped-def]
+def test_every_table_has_row_level_security(engines) -> None:  # type: ignore[no-untyped-def]
+    """Since 0007 EVERY application table is locked in the database, the people tables included."""
     owner, _ = engines
     insp = inspect(owner)
     with owner.connect() as conn:
         enabled = {r[0] for r in conn.execute(text("SELECT relname FROM pg_class WHERE relrowsecurity"))}
-    for table in insp.get_table_names():
-        columns = {c["name"] for c in insp.get_columns(table)}
-        if ("clinic_id" in columns or table == "clinics") and table not in NOT_TENANT_SCOPED:
-            assert table in enabled, (
-                f"{table} has clinic data but no row-level security — add it in a migration"
-            )
+    missing = sorted(set(insp.get_table_names()) - enabled - {"alembic_version"})
+    assert missing == [], f"no row-level security on {missing} — add it in a migration"
 
 
 def test_no_scope_means_no_rows(db, session_factory) -> None:  # type: ignore[no-untyped-def]
@@ -57,9 +51,16 @@ def test_scope_hides_other_clinics_even_without_where(db, session_factory) -> No
 
 def test_cannot_write_into_another_clinic(db, session_factory) -> None:  # type: ignore[no-untyped-def]
     a, b = make_clinic(db, "A"), make_clinic(db, "B")
+    doctor_of_b = make_practitioner(db, b, "Dr B")
     with session_factory() as s:
         set_tenant_scope(s, [a.id])
-        s.add(Practitioner(clinic_id=b.id, full_name="Intruder"))
+        s.add(ClinicPractitioner(clinic_id=b.id, practitioner_id=doctor_of_b.id))
+        with pytest.raises(DBAPIError, match="row-level security"):
+            s.commit()
+    with session_factory() as s:
+        set_tenant_scope(s, [a.id])
+        # ...and a practitioner cannot be created in a business you have no clinic in.
+        s.add(Practitioner(organization_id=b.organization_id, full_name="Intruder"))
         with pytest.raises(DBAPIError, match="row-level security"):
             s.commit()
 
@@ -71,7 +72,7 @@ def test_cannot_move_a_row_to_another_clinic(db, session_factory) -> None:  # ty
         set_tenant_scope(s, [a.id])
         with pytest.raises(DBAPIError, match="row-level security"):
             s.execute(
-                text("UPDATE practitioners SET clinic_id = :b WHERE id = :d"),
+                text("UPDATE clinic_practitioners SET clinic_id = :b WHERE practitioner_id = :d"),
                 {"b": b.id, "d": practitioner.id},
             )
 
@@ -164,7 +165,7 @@ def test_archiving_without_a_reason_is_refused_by_the_database(db) -> None:  # t
 
 
 def test_milestone1_migrations_keep_and_backfill_existing_data() -> None:
-    """0005 + 0006 on a scratch database that already has data at 0004, then back down again."""
+    """0005-0009 on a scratch database that already has data at 0004, then back down again."""
     from alembic import command
     from alembic.config import Config
 
@@ -214,7 +215,7 @@ def test_milestone1_migrations_keep_and_backfill_existing_data() -> None:
                     """
                 )
             )
-        migrate("head")
+        migrate("0006")
         with engine.connect() as conn:
             q = lambda sql: conn.execute(text(sql)).all()  # noqa: E731
             assert q("SELECT full_name FROM practitioners WHERE is_primary") == [("Dr First",)]
@@ -229,6 +230,13 @@ def test_milestone1_migrations_keep_and_backfill_existing_data() -> None:
             assert q("SELECT archived_reason IS NOT NULL FROM clinics WHERE name = 'D'") == [(True,)]
             assert q("SELECT kind FROM assets") == [("practitioner_photo",)]
             assert q("SELECT indexname FROM pg_indexes WHERE indexname = 'ix_practitioners_clinic_id'")
+        migrate("head")  # 0007-0009: every doctor keeps its business and gets one clinic link
+        with engine.connect() as conn:
+            q = lambda sql: conn.execute(text(sql)).all()  # noqa: E731
+            assert q("SELECT count(*) FROM practitioners WHERE organization_id IS NULL") == [(0,)]
+            assert q("SELECT count(*) FROM clinic_practitioners") == [(2,)]
+            assert q("SELECT p.full_name FROM clinic_practitioners cp JOIN practitioners p "
+                     "ON p.id = cp.practitioner_id WHERE cp.is_primary") == [("Dr First",)]  # fmt: skip
         migrate("0004", down=True)
         with engine.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM doctors")).scalar() == 2
@@ -304,3 +312,135 @@ def test_role_migration_maps_legacy_rows() -> None:
         with admin.connect() as conn:
             conn.execute(text(f'DROP DATABASE IF EXISTS "{scratch}"'))
         admin.dispose()
+
+
+# ------------------------------------------------------------------ people tables (0007)
+def test_people_tables_follow_the_signed_in_person(db, session_factory) -> None:  # type: ignore[no-untyped-def]
+    """users / memberships / assignments / organizations / notifications are locked too."""
+    from app.db.tenant import set_current_user
+    from app.models import ClinicMembership, Notification, Organization, User
+    from app.repositories.users import UserRepository
+
+    a, b = make_clinic(db, "A"), make_clinic(db, "B")
+    admin = make_user(db, PlatformRole.PLATFORM_ADMINISTRATOR, email="admin@x.test")
+    priya = make_user(db, PlatformRole.DIGITAL_SUCCESS_MANAGER, email="priya@x.test")
+    rahul = make_user(db, PlatformRole.CLINIC_USER, email="rahul@x.test")
+    bose = make_user(db, PlatformRole.CLINIC_USER, email="bose@x.test")
+    assign(db, a, priya)
+    add_member(db, a, rahul, ClinicRole.CLINIC_ADMINISTRATOR)
+    add_member(db, b, bose, ClinicRole.CLINIC_ADMINISTRATOR)
+    db.add_all([Notification(user_id=priya.id, kind="k", title="for priya"),
+                Notification(user_id=rahul.id, kind="k", title="for rahul")])  # fmt: skip
+    db.commit()
+
+    def emails(s):  # type: ignore[no-untyped-def]
+        return {u.email for u in s.query(User).all()}  # no filter on purpose
+
+    with session_factory() as s:
+        assert emails(s) == set()  # nothing known → nothing visible (fail closed)
+        # ...but sign-in / add-team-member lookups still work:
+        assert UserRepository(s).find_id_by_sub(bose.cognito_sub) == bose.id
+        match = UserRepository(s).find_by_email("BOSE@x.test")
+        assert match is not None and match.platform_role is PlatformRole.CLINIC_USER
+
+    with session_factory() as s:  # Dr Rahul, clinic A
+        set_current_user(s, rahul.id)
+        set_tenant_scope(s, [a.id])
+        assert emails(s) == {"rahul@x.test", "priya@x.test"}  # himself + his clinic's DSM
+        assert s.query(ClinicMembership).count() == 1
+        assert {o.name for o in s.query(Organization).all()} == {"A Org"}
+        assert [n.title for n in s.query(Notification).all()] == ["for rahul"]
+
+    with session_factory() as s:  # DSM Priya: staff see staff, plus people of her clinics
+        set_current_user(s, priya.id, is_staff=True)
+        set_tenant_scope(s, [a.id])
+        assert emails(s) == {"admin@x.test", "priya@x.test", "rahul@x.test"}
+
+    with session_factory() as s:  # a clinic user may never create a staff account
+        set_current_user(s, rahul.id)
+        set_tenant_scope(s, [a.id])
+        s.add(User(email="evil@x.test", platform_role=PlatformRole.PLATFORM_ADMINISTRATOR))
+        with pytest.raises(DBAPIError, match="row-level security"):
+            s.commit()
+
+    with session_factory() as s:  # the Platform Administrator sees everyone
+        set_current_user(s, admin.id, is_staff=True)
+        set_tenant_scope(s, None)
+        assert len(emails(s)) == 4
+
+
+def test_practitioner_of_another_business_is_invisible(db, session_factory) -> None:  # type: ignore[no-untyped-def]
+    a, b = make_clinic(db, "A"), make_clinic(db, "B")  # two different businesses
+    make_practitioner(db, a, "Dr A")
+    make_practitioner(db, b, "Dr B")
+    branch = make_clinic(db, "A branch", organization=a.organization)
+    with session_factory() as s:
+        set_tenant_scope(s, [branch.id])
+        # Same business: Dr A is visible from the sibling branch (so they can be linked there).
+        assert {p.full_name for p in s.query(Practitioner).all()} == {"Dr A"}
+
+
+# --------------------------------------------------------- status copy in step (0009)
+def test_report_status_cannot_drift_from_its_approval(db) -> None:  # type: ignore[no-untyped-def]
+    """The approvals row owns the review status; the copy on the assessment must match at commit."""
+    from app.core.enums import ApprovalState, AssessmentStatus, PublicationState
+    from app.models import Approval, Assessment
+
+    clinic = make_clinic(db, "A")
+    assessment = Assessment(
+        clinic_id=clinic.id, sequence=1, status=AssessmentStatus.COMPLETED, methodology_version="t"
+    )
+    db.add(assessment)
+    db.flush()
+    db.add(Approval(clinic_id=clinic.id, resource_type="assessment", resource_id=assessment.id,
+                    state=ApprovalState.SUBMITTED))  # fmt: skip
+    assessment.approval_state = ApprovalState.SUBMITTED
+    db.commit()  # in step: fine
+
+    assessment.publication_state = PublicationState.PUBLISHED  # sneaking past the approval flow
+    with pytest.raises(DBAPIError, match=r"out of step|must change through approvals"):
+        db.commit()
+    db.rollback()
+
+
+def test_approval_created_as_draft_then_submitted_commits(db) -> None:  # type: ignore[no-untyped-def]
+    """The real app flow: the approval row starts as draft and moves on in the same transaction.
+
+    The status checks run at COMMIT but must look at the rows as they are THEN, not as they were
+    when the approval was first inserted (draft), or every first submit would fail.
+    """
+    from app.core.enums import ApprovalState, AssessmentStatus, PublicationState
+    from app.models import Approval, Assessment
+
+    clinic = make_clinic(db, "A")
+    assessment = Assessment(
+        clinic_id=clinic.id, sequence=1, status=AssessmentStatus.COMPLETED, methodology_version="t"
+    )
+    db.add(assessment)
+    db.flush()
+    approval = Approval(clinic_id=clinic.id, resource_type="assessment", resource_id=assessment.id,
+                        state=ApprovalState.DRAFT)  # fmt: skip
+    db.add(approval)
+    db.flush()  # INSERT as draft
+    approval.state = ApprovalState.SUBMITTED
+    assessment.approval_state = ApprovalState.SUBMITTED
+    db.commit()  # must succeed
+
+    approval.state = ApprovalState.APPROVED
+    approval.publication_state = PublicationState.PUBLISHED
+    assessment.approval_state = ApprovalState.APPROVED
+    assessment.publication_state = PublicationState.PUBLISHED
+    db.commit()
+    db.refresh(assessment)
+    assert assessment.publication_state == PublicationState.PUBLISHED
+
+
+def test_app_role_cannot_delete_audit_rows_even_with_the_archive_flag(db, session_factory) -> None:  # type: ignore[no-untyped-def]
+    a = make_clinic(db, "A")
+    db.add(AuditEvent(action="t.e", resource_type="t", clinic_id=a.id, details={}))
+    db.commit()
+    with session_factory() as s:
+        set_tenant_scope(s, [a.id])
+        s.execute(text("SELECT set_config('app.archiving', 'on', true)"))
+        with pytest.raises(DBAPIError, match="permission denied"):
+            s.execute(text("DELETE FROM audit_events"))

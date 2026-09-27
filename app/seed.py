@@ -22,6 +22,7 @@ from app.models import (
     Clinic,
     ClinicAssignment,
     ClinicMembership,
+    ClinicPractitioner,
     ClinicProfile,
     ClinicStageHistory,
     Organization,
@@ -160,7 +161,12 @@ def seed_demo(session: Session) -> str:
         session.add(clinic)
         session.flush()
         session.add(ClinicProfile(clinic_id=clinic.id))
-        session.add(Practitioner(clinic_id=clinic.id, full_name=spec.practitioner, is_primary=True))
+        doctor_record = Practitioner(organization_id=org.id, full_name=spec.practitioner)
+        session.add(doctor_record)
+        session.flush()
+        session.add(
+            ClinicPractitioner(clinic_id=clinic.id, practitioner_id=doctor_record.id, is_primary=True)
+        )
         # Stage diary: every step up to the current one.
         previous: ClinicStage | None = None
         for stage in STAGE_PATH[: STAGE_PATH.index(spec.stage) + 1]:

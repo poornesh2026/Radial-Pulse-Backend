@@ -11,6 +11,7 @@ from app.models import (
     Clinic,
     ClinicAssignment,
     ClinicMembership,
+    ClinicPractitioner,
     ClinicStageHistory,
     Organization,
     Practitioner,
@@ -18,6 +19,7 @@ from app.models import (
     WorkItem,
 )
 from app.repositories.base import Repository
+from app.repositories.users import like_pattern
 
 OPEN_WORK_STATUSES = (
     WorkItemStatus.TODO,
@@ -72,14 +74,24 @@ class ClinicRepository(Repository):
         if unassigned:
             stmt = stmt.where(~exists(active_dsm))
         if search:
-            pattern = f"%{search.strip()}%"
+            # The user's own % and _ are plain characters. Trigram indexes (0009) make this fast.
+            pattern = like_pattern(search)
             practitioner_match = (
-                select(Practitioner.id)
-                .where(Practitioner.clinic_id == Clinic.id, Practitioner.full_name.ilike(pattern))
+                select(ClinicPractitioner.id)
+                .join(Practitioner, Practitioner.id == ClinicPractitioner.practitioner_id)
+                .where(
+                    ClinicPractitioner.clinic_id == Clinic.id,
+                    ClinicPractitioner.is_active.is_(True),
+                    Practitioner.full_name.ilike(pattern, escape="\\"),
+                )
                 .correlate(Clinic)
             )
             stmt = stmt.where(
-                or_(Clinic.name.ilike(pattern), Clinic.website_url.ilike(pattern), exists(practitioner_match))
+                or_(
+                    Clinic.name.ilike(pattern, escape="\\"),
+                    Clinic.website_url.ilike(pattern, escape="\\"),
+                    exists(practitioner_match),
+                )
             )
         return self.paginate(stmt.order_by(Clinic.name, Clinic.id), limit, offset)
 
@@ -91,10 +103,12 @@ class ClinicRepository(Repository):
         if not clinic_ids:
             return {}
         rows = self.session.execute(
-            select(Practitioner.clinic_id, Practitioner.full_name).where(
-                Practitioner.clinic_id.in_(clinic_ids),
-                Practitioner.is_primary.is_(True),
-                Practitioner.is_active.is_(True),
+            select(ClinicPractitioner.clinic_id, Practitioner.full_name)
+            .join(Practitioner, Practitioner.id == ClinicPractitioner.practitioner_id)
+            .where(
+                ClinicPractitioner.clinic_id.in_(clinic_ids),
+                ClinicPractitioner.is_primary.is_(True),
+                ClinicPractitioner.is_active.is_(True),
             )
         )
         return {cid: name for cid, name in rows}
@@ -137,26 +151,45 @@ class StageHistoryRepository(Repository):
 
 
 class PractitionerRepository(Repository):
-    def list_for_clinic(self, clinic_id: UUID, limit: int, offset: int) -> tuple[list[Any], int]:
-        stmt = (
-            select(Practitioner)
-            .where(Practitioner.clinic_id == clinic_id)
-            .order_by(Practitioner.is_primary.desc(), Practitioner.full_name, Practitioner.id)
-        )
-        return self.paginate(stmt, limit, offset)
+    """A practitioner (the person, one per business) + their link to each clinic they work at."""
 
-    def get_in_clinic(self, clinic_id: UUID, practitioner_id: UUID) -> Practitioner | None:
-        return self.session.scalar(
-            select(Practitioner).where(
-                Practitioner.clinic_id == clinic_id, Practitioner.id == practitioner_id
-            )
+    def list_for_clinic(
+        self, clinic_id: UUID, limit: int, offset: int
+    ) -> tuple[list[tuple[ClinicPractitioner, Practitioner]], int]:
+        base = (
+            select(ClinicPractitioner, Practitioner)
+            .join(Practitioner, Practitioner.id == ClinicPractitioner.practitioner_id)
+            .where(ClinicPractitioner.clinic_id == clinic_id)
         )
+        total = self.session.scalar(select(func.count()).select_from(base.subquery())) or 0
+        rows = self.session.execute(
+            base.order_by(ClinicPractitioner.is_primary.desc(), Practitioner.full_name, Practitioner.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        return [(link, person) for link, person in rows], int(total)
+
+    def get_in_clinic(
+        self, clinic_id: UUID, practitioner_id: UUID
+    ) -> tuple[ClinicPractitioner, Practitioner] | None:
+        row = self.session.execute(
+            select(ClinicPractitioner, Practitioner)
+            .join(Practitioner, Practitioner.id == ClinicPractitioner.practitioner_id)
+            .where(
+                ClinicPractitioner.clinic_id == clinic_id,
+                ClinicPractitioner.practitioner_id == practitioner_id,
+            )
+        ).first()
+        return (row[0], row[1]) if row else None
+
+    def get_person(self, practitioner_id: UUID) -> Practitioner | None:
+        return self.session.get(Practitioner, practitioner_id)
 
     def clear_primary(self, clinic_id: UUID) -> None:
         """Un-mark the clinic's current main practitioner (before marking another one)."""
         self.session.execute(
-            update(Practitioner)
-            .where(Practitioner.clinic_id == clinic_id, Practitioner.is_primary.is_(True))
+            update(ClinicPractitioner)
+            .where(ClinicPractitioner.clinic_id == clinic_id, ClinicPractitioner.is_primary.is_(True))
             .values(is_primary=False)
             .execution_options(synchronize_session="fetch")
         )

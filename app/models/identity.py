@@ -14,11 +14,16 @@ from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.enums import PlatformRole
-from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum, trigram_index
 
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # Fast search on the Users screen (pg_trgm, migration 0009).
+        trigram_index("ix_users_email_trgm", "email"),
+        trigram_index("ix_users_full_name_trgm", "full_name"),
+    )
 
     #: Always stored lower-case. Used to link the Cognito identity on first sign-in.
     email: Mapped[str] = mapped_column(String(320), unique=True)

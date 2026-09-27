@@ -126,7 +126,15 @@ class ArchiveRequest(ApiModel):
 
 # ------------------------------------------------------------------ practitioners
 class PractitionerCreate(ApiModel):
-    full_name: ShortText
+    """Add a practitioner to this clinic.
+
+    Either describe a NEW person (``full_name`` + details), or give ``practitioner_id`` to link a
+    doctor who already works at another branch of the same business.
+    """
+
+    #: Link an existing practitioner of the same business (then leave the person fields out).
+    practitioner_id: UUID | None = None
+    full_name: ShortText | None = None
     specialty: str | None = Field(default=None, max_length=120)
     qualifications: str | None = Field(default=None, max_length=300)
     registration_number: str | None = Field(default=None, max_length=64)
@@ -136,8 +144,20 @@ class PractitionerCreate(ApiModel):
     #: Link an existing clinic user login (optional — most practitioners will not have one).
     user_id: UUID | None = None
 
+    @model_validator(mode="after")
+    def _new_or_existing(self) -> Self:
+        person_fields = ("full_name", "specialty", "qualifications", "registration_number", "bio", "user_id")
+        if self.practitioner_id is None and self.full_name is None:
+            raise ValueError("give full_name for a new practitioner, or practitioner_id to link one")
+        if self.practitioner_id is not None and any(getattr(self, f) is not None for f in person_fields):
+            raise ValueError("when linking with practitioner_id, leave the person's details out")
+        return self
+
 
 class PractitionerUpdate(PatchModel):
+    """Name/specialty/qualifications/registration/bio change the PERSON (every branch they work
+    at). ``is_primary`` and ``is_active`` apply to THIS clinic only."""
+
     not_null_fields = ("full_name", "is_primary", "is_active")
 
     full_name: ShortText | None = None

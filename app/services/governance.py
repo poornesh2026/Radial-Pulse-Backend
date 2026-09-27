@@ -207,7 +207,11 @@ def _handoff(session: Session, ctx: ClinicContext, approval: Approval, assignee_
     if assignee_id is None:
         raise DomainValidationError("assignee_user_id is required for handoff")
     assignee = UserRepository(session).get(assignee_id)
-    if assignee is None or not assignee.is_active:
+    # Row-level security hides accounts with no link to this clinic, so "not visible" and
+    # "no access" are the same answer here.
+    if assignee is None:
+        raise DomainValidationError("Assignee has no access to this clinic")
+    if not assignee.is_active:
         raise NotFoundError("Assignee not found")
     if not build_principal(session, assignee).can_access_clinic(ctx.clinic_id):
         raise DomainValidationError("Assignee has no access to this clinic")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 from uuid import UUID
 
@@ -17,11 +18,31 @@ from app.schemas.reporting import MetricSnapshotBatch, ReportArtifactCreate
 from app.services import audit
 
 
+def number_of(value: dict[str, Any]) -> float | None:
+    """The plain number inside a metric value ({"value": 5432} → 5432.0), else None.
+
+    Booleans are not numbers here (True is not 1 follower).
+    """
+    raw = value.get("value")
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
+        return None
+    number = float(raw)
+    # NUMERIC(20, 6) holds values below 1e14; anything bigger (or inf/nan) stays JSON-only.
+    if not math.isfinite(number) or abs(number) >= 1e14:
+        return None
+    return number
+
+
 def ingest_snapshots(
     session: Session, ctx: ClinicContext, batch: MetricSnapshotBatch
 ) -> list[MetricSnapshot]:
     rows = [
-        MetricSnapshot(clinic_id=ctx.clinic_id, ingested_by_user_id=ctx.principal.user_id, **s.model_dump())
+        MetricSnapshot(
+            clinic_id=ctx.clinic_id,
+            ingested_by_user_id=ctx.principal.user_id,
+            value_number=number_of(s.value),
+            **s.model_dump(),
+        )
         for s in batch.snapshots
     ]
     SnapshotRepository(session).add_many(rows)

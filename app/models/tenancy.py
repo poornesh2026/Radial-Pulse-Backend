@@ -2,7 +2,8 @@
 
 * ``Organization`` — the client business. Groups one or more clinics (branches).
 * ``Clinic``       — THE tenant. Almost every other row carries ``clinic_id``.
-* ``Practitioner`` — a doctor/practitioner record inside one clinic. May exist WITHOUT a login.
+* ``Practitioner`` — a doctor, one record per person per business. May exist WITHOUT a login.
+* ``ClinicPractitioner`` — which clinics (branches) a practitioner works at; one main per clinic.
 * ``ClinicMembership`` — a clinic user's role inside one clinic (Clinic Administrator).
 * ``ClinicAssignment`` — the Digital Success Manager looking after one clinic
   (Portfolio Allocation). At most ONE active per clinic.
@@ -28,7 +29,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import ClinicRole, ClinicStage
-from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum, utcnow
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum, trigram_index, utcnow
 
 Coordinate = Numeric(9, 6)
 
@@ -49,6 +50,9 @@ class Clinic(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="archive_reason",
         ),
         CheckConstraint("(latitude IS NULL) = (longitude IS NULL)", name="lat_lng_pair"),
+        # Fast "search by clinic name / website" (pg_trgm, migration 0009).
+        trigram_index("ix_clinics_name_trgm", "name"),
+        trigram_index("ix_clinics_website_url_trgm", "website_url"),
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -88,13 +92,37 @@ class Clinic(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class Practitioner(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """A doctor or other practitioner inside ONE clinic (was ``Doctor`` / ``doctors``)."""
+    """A doctor or other practitioner — ONE record per person per business (organization).
+
+    Which branches they work at is in ``clinic_practitioners``. Two different businesses never
+    share a record (their data stays apart). Formerly ``doctors``, then one row per clinic.
+    """
 
     __tablename__ = "practitioners"
+    __table_args__ = (trigram_index("ix_practitioners_full_name_trgm", "full_name"),)
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), index=True
+    )
+    full_name: Mapped[str] = mapped_column(String(200))
+    specialty: Mapped[str | None] = mapped_column(String(120))
+    qualifications: Mapped[str | None] = mapped_column(String(300))
+    registration_number: Mapped[str | None] = mapped_column(String(64))
+    #: Short bio — an input for Digital Presence Intelligence.
+    bio: Mapped[str | None] = mapped_column(Text)
+    #: Optional link to a login. A practitioner record does not require a user.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class ClinicPractitioner(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A practitioner working at one clinic (branch). One row per (clinic, practitioner)."""
+
+    __tablename__ = "clinic_practitioners"
     __table_args__ = (
+        UniqueConstraint("clinic_id", "practitioner_id"),
         # One main practitioner per clinic: the "Doctor Name" shown in clinic lists.
         Index(
-            "uq_practitioners_one_primary",
+            "uq_clinic_practitioners_one_primary",
             "clinic_id",
             unique=True,
             postgresql_where=text("is_primary AND is_active"),
@@ -103,15 +131,11 @@ class Practitioner(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     clinic_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clinics.id", ondelete="CASCADE"), index=True)
-    full_name: Mapped[str] = mapped_column(String(200))
-    specialty: Mapped[str | None] = mapped_column(String(120))
-    qualifications: Mapped[str | None] = mapped_column(String(300))
-    registration_number: Mapped[str | None] = mapped_column(String(64))
-    #: Short bio — an input for Digital Presence Intelligence.
-    bio: Mapped[str | None] = mapped_column(Text)
+    practitioner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("practitioners.id", ondelete="CASCADE"), index=True
+    )
     is_primary: Mapped[bool] = mapped_column(default=False)
-    #: Optional link to a login. A practitioner record does not require a user.
-    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    #: false = no longer works at THIS clinic (the person may still work at other branches).
     is_active: Mapped[bool] = mapped_column(default=True)
 
 

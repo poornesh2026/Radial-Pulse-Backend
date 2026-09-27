@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.enums import ApprovalState, DataSource, PublicationState, SnapshotStatus
@@ -33,6 +33,9 @@ class MetricSnapshot(UUIDPrimaryKeyMixin, Base):
     metric_key: Mapped[str] = mapped_column(String(128))
     #: The normalized value: {"value": 42} or a small structured object. Versioned by schema_version.
     value: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    #: The number itself when the metric is a plain number ({"value": 5432} → 5432), so charts and
+    #: comparisons can use SQL (sum, max, growth) instead of reading JSON. Filled automatically.
+    value_number: Mapped[float | None] = mapped_column(Numeric(20, 6))
     schema_version: Mapped[int] = mapped_column(default=1)
     fetched_at: Mapped[datetime]
     status: Mapped[SnapshotStatus] = mapped_column(str_enum(SnapshotStatus))

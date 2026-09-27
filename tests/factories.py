@@ -11,6 +11,7 @@ from app.models import (
     Clinic,
     ClinicAssignment,
     ClinicMembership,
+    ClinicPractitioner,
     ClinicProfile,
     Organization,
     Practitioner,
@@ -60,7 +61,10 @@ def assign(db: Session, clinic: Clinic, user: User) -> ClinicAssignment:
 def make_practitioner(
     db: Session, clinic: Clinic, name: str = "Dr. Test", is_primary: bool = False
 ) -> Practitioner:
-    p = Practitioner(clinic_id=clinic.id, full_name=name, specialty="Dentistry", is_primary=is_primary)
+    """A practitioner (the person, in the clinic's business) working at ``clinic``."""
+    p = Practitioner(organization_id=clinic.organization_id, full_name=name, specialty="Dentistry")
     db.add(p)
+    db.flush()
+    db.add(ClinicPractitioner(clinic_id=clinic.id, practitioner_id=p.id, is_primary=is_primary))
     db.commit()
     return p

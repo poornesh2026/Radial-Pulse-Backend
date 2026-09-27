@@ -33,6 +33,8 @@ class MetricSnapshotRead(ApiModel):
     source: DataSource
     metric_key: str
     value: dict[str, Any]
+    #: The plain number, when the value is one (for charts).
+    value_number: float | None
     schema_version: int
     fetched_at: datetime
     status: SnapshotStatus

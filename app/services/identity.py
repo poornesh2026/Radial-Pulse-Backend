@@ -13,10 +13,12 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.core.enums import PlatformRole
 from app.core.errors import NotProvisionedError, UnauthorizedError
 from app.core.rbac import Principal
 from app.core.security import VerifiedToken
 from app.db.base import utcnow
+from app.db.tenant import set_current_user
 from app.integrations.cognito import UserInfoClient
 from app.models import User
 from app.repositories.tenancy import AssignmentRepository, MembershipRepository
@@ -27,6 +29,7 @@ from app.services import audit
 logger = logging.getLogger(__name__)
 
 LAST_LOGIN_RESOLUTION = timedelta(minutes=15)
+STAFF_ROLES = (PlatformRole.PLATFORM_ADMINISTRATOR, PlatformRole.DIGITAL_SUCCESS_MANAGER)
 
 
 def build_principal(session: Session, user: User) -> Principal:
@@ -45,7 +48,13 @@ def resolve_principal(
     session: Session, token: VerifiedToken, raw_token: str, userinfo: UserInfoClient | None
 ) -> Principal:
     users = UserRepository(session)
-    user = users.get_by_sub(token.subject)
+    # The users table is under row-level security: find the account with the narrow lookup,
+    # then tell the database who is asking, THEN load the row (a person can always see themselves).
+    user_id = users.find_id_by_sub(token.subject)
+    user = None
+    if user_id is not None:
+        set_current_user(session, user_id)
+        user = users.get(user_id)
 
     if user is None:
         if userinfo is None:
@@ -57,7 +66,10 @@ def resolve_principal(
             raise UnauthorizedError("Could not confirm your identity. Please sign in again.") from exc
         if not info.email or not info.email_verified:
             raise NotProvisionedError("Your email address is not verified.")
-        user = users.get_by_email(info.email)
+        match = users.find_by_email(info.email)
+        if match is not None:
+            set_current_user(session, match.id)
+            user = users.get(match.id)
         if user is None or user.cognito_sub is not None:
             # Unknown email, or the email is already linked to a DIFFERENT Cognito identity.
             raise NotProvisionedError("This account has not been invited to Radial Pulse.")
@@ -76,6 +88,7 @@ def resolve_principal(
 
     if not user.is_active:
         raise NotProvisionedError("This account is disabled.")
+    set_current_user(session, user.id, is_staff=user.platform_role in STAFF_ROLES)
 
     now = utcnow()
     if user.last_login_at is None or now - _aware(user.last_login_at) > LAST_LOGIN_RESOLUTION:

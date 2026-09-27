@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Enum, MetaData, Uuid, func
+from sqlalchemy import JSON, DateTime, Enum, Index, MetaData, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -25,6 +25,14 @@ NAMING_CONVENTION = {
 }
 
 JSONType = JSON().with_variant(JSONB(), "postgresql")
+
+
+def trigram_index(name: str, column: str) -> Index:
+    """A PostgreSQL trigram index (pg_trgm) so ``ILIKE '%text%'`` searches stay fast on big tables.
+
+    On SQLite (fast tests) it is just a plain index.
+    """
+    return Index(name, column, postgresql_using="gin", postgresql_ops={column: "gin_trgm_ops"})
 
 
 def utcnow() -> datetime:

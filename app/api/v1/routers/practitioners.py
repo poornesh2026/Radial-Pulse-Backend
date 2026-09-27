@@ -1,4 +1,7 @@
-"""Practitioners (doctors and other professionals) of a clinic. Records, not logins."""
+"""Practitioners (doctors and other professionals) of a clinic. Records, not logins.
+
+One practitioner record per person per business; the same doctor can be linked to several
+branches (clinic_practitioners)."""
 
 from __future__ import annotations
 
@@ -26,25 +29,32 @@ def list_practitioners(
     db: Session = Depends(get_db),
 ) -> Page[PractitionerRead]:
     items, total = service.list_practitioners(db, ctx, limit, offset)
-    return Page[PractitionerRead](
-        items=[PractitionerRead.model_validate(p) for p in items], total=total, limit=limit, offset=offset
-    )
+    return Page[PractitionerRead](items=items, total=total, limit=limit, offset=offset)
 
 
-@router.post("", response_model=PractitionerRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=PractitionerRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a new practitioner, or link one from another branch of the same business",
+)
 def create_practitioner(
     body: PractitionerCreate,
     ctx: ClinicContext = Depends(clinic_access(Permission.PRACTITIONERS_WRITE)),
     db: Session = Depends(get_db),
 ) -> PractitionerRead:
-    return PractitionerRead.model_validate(service.create_practitioner(db, ctx, body))
+    return service.create_practitioner(db, ctx, body)
 
 
-@router.patch("/{practitioner_id}", response_model=PractitionerRead)
+@router.patch(
+    "/{practitioner_id}",
+    response_model=PractitionerRead,
+    summary="Edit the person (all branches) or their main/active flags at THIS clinic",
+)
 def update_practitioner(
     practitioner_id: UUID,
     body: PractitionerUpdate,
     ctx: ClinicContext = Depends(clinic_access(Permission.PRACTITIONERS_WRITE)),
     db: Session = Depends(get_db),
 ) -> PractitionerRead:
-    return PractitionerRead.model_validate(service.update_practitioner(db, ctx, practitioner_id, body))
+    return service.update_practitioner(db, ctx, practitioner_id, body)

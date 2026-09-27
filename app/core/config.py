@@ -93,6 +93,15 @@ class Settings(BaseSettings):
     #: Where invited people sign in (the web app). Mobile users use the app itself.
     app_sign_in_url: str = "http://localhost:5173/sign-in"
 
+    # ---------------------------------------------------------------- archiving
+    #: S3 bucket for archived rows (old metric snapshots and audit events). Empty = local folder.
+    archive_bucket: str | None = None
+    #: Folder used instead of S3 when ``archive_bucket`` is empty (local development only).
+    archive_local_dir: str = ".archive"
+    #: Keep this many days in the database; older rows move to the archive.
+    archive_metrics_after_days: int = Field(default=180, ge=30)
+    archive_audit_after_days: int = Field(default=365, ge=90)
+
     # --------------------------------------------------------------- validators
     @field_validator("cors_allowed_origins", "cognito_app_client_ids", mode="before")
     @classmethod

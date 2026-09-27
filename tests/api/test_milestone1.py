@@ -20,6 +20,7 @@ from app.models import (
     AssessmentFinding,
     AuditEvent,
     ClinicMembership,
+    ClinicPractitioner,
     Practitioner,
     User,
     WorkItem,
@@ -156,7 +157,12 @@ def test_only_one_main_practitioner(client, db, world, auth) -> None:  # type: i
     r = client.patch(f"{path}/{world.practitioner_a.id}", headers=h, json={"is_primary": True})
     assert r.status_code == 200
     db.expire_all()
-    primaries = db.query(Practitioner).filter_by(clinic_id=world.clinic_a.id, is_primary=True).all()
+    primaries = (
+        db.query(Practitioner)
+        .join(ClinicPractitioner, ClinicPractitioner.practitioner_id == Practitioner.id)
+        .filter(ClinicPractitioner.clinic_id == world.clinic_a.id, ClinicPractitioner.is_primary.is_(True))
+        .all()
+    )
     assert [p.full_name for p in primaries] == ["Dr. A"]
 
 
@@ -388,3 +394,66 @@ def test_edit_requests_cannot_null_required_fields(client, world, auth) -> None:
     assert r.status_code == 422
     r = client.patch(f"/api/v1/users/{world.dsm_a.id}", headers=auth(world.admin), json={"is_active": None})
     assert r.status_code == 422
+
+
+# ------------------------------------------------- one doctor, several branches (0008)
+def test_same_doctor_can_work_at_two_branches(client, db, world, auth) -> None:  # type: ignore[no-untyped-def]
+    h = auth(world.dsm_a)
+    r = client.post(
+        "/api/v1/clinics",
+        headers=h,
+        json={"name": "Smile Dental A — Branch 2", "organization_id": str(world.clinic_a.organization_id)},
+    )
+    assert r.status_code == 201, r.text
+    branch = f"/api/v1/clinics/{r.json()['id']}"
+    # Link the doctor who already works at clinic A (same business).
+    r = client.post(
+        f"{branch}/practitioners", headers=h, json={"practitioner_id": str(world.practitioner_a.id)}
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["id"] == str(world.practitioner_a.id) and r.json()["is_primary"] is False
+    assert (
+        client.post(
+            f"{branch}/practitioners", headers=h, json={"practitioner_id": str(world.practitioner_a.id)}
+        ).status_code
+        == 409
+    )  # already linked
+    # Editing the PERSON shows everywhere; the active flag is per clinic.
+    r = client.patch(
+        f"{branch}/practitioners/{world.practitioner_a.id}", headers=h, json={"full_name": "Dr. A Kumar"}
+    )
+    assert r.status_code == 200
+    r = client.patch(
+        f"{branch}/practitioners/{world.practitioner_a.id}", headers=h, json={"is_active": False}
+    )
+    assert r.json()["is_active"] is False
+    at_a = client.get(f"{_clinic(world)}/practitioners", headers=h).json()["items"]
+    assert [(p["full_name"], p["is_active"]) for p in at_a] == [("Dr. A Kumar", True)]
+
+
+def test_cannot_link_a_doctor_of_another_business(client, world, auth) -> None:  # type: ignore[no-untyped-def]
+    r = client.post(
+        f"{_clinic(world)}/practitioners",
+        headers=auth(world.admin),
+        json={"practitioner_id": str(world.practitioner_b.id)},
+    )
+    assert r.status_code == 404
+    both = {"practitioner_id": str(world.practitioner_a.id), "full_name": "X"}
+    assert (
+        client.post(f"{_clinic(world)}/practitioners", headers=auth(world.admin), json=both).status_code
+        == 422
+    )
+    assert (
+        client.post(f"{_clinic(world)}/practitioners", headers=auth(world.admin), json={}).status_code == 422
+    )
+
+
+def test_clinic_admin_can_add_someone_who_already_has_an_account_elsewhere(client, world, auth) -> None:  # type: ignore[no-untyped-def]
+    """The account belongs to clinic B (invisible to A's people): found by email, then added."""
+    r = client.post(
+        f"{_clinic(world)}/team",
+        headers=auth(world.clinic_admin_a),
+        json={"email": world.clinic_admin_b.email, "role": "clinic_team_member"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["email"] == world.clinic_admin_b.email
