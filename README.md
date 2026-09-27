@@ -20,18 +20,13 @@ radial-pulse-backend/
 
 ## One-time: publish this repo and the first contract (Person 1)
 
-This repo was prepared where Python packages could not be downloaded, so two generated files
-are still missing: `uv.lock` and `openapi/openapi.json`. Create them on your machine:
+Done on 27 Sep 2026: `uv.lock` and `openapi/openapi.json` (contract v0.1.0) are generated and
+committed, and the full test suite passes on PostgreSQL. Until the GitHub release exists, the
+frontend team can take `openapi/openapi.json` straight from this repo.
+
+Still to do:
 
 ```bash
-make install && make lock        # creates uv.lock
-make openapi                     # creates openapi/openapi.json (contract v0.1.0)
-make db && make migrate          # local database up to migration 0010
-make check                       # lint, types, fast tests, contract
-TEST_DATABASE_URL=postgresql+psycopg://radial:radial_local_only@localhost:5432/radial_pulse_test make integration-test
-git add uv.lock openapi/openapi.json
-git commit -m "chore(contract): first contract v0.1.0 and uv.lock"
-
 # on GitHub: create an EMPTY private repo <org>/radial-pulse-backend (no README), then
 git remote add origin git@github.com:<org>/radial-pulse-backend.git
 git push -u origin main
