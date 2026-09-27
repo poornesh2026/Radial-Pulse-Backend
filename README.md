@@ -18,6 +18,29 @@ radial-pulse-backend/
 └── Makefile              every command (make help)
 ```
 
+## One-time: publish this repo and the first contract (Person 1)
+
+This repo was prepared where Python packages could not be downloaded, so two generated files
+are still missing: `uv.lock` and `openapi/openapi.json`. Create them on your machine:
+
+```bash
+make install && make lock        # creates uv.lock
+make openapi                     # creates openapi/openapi.json (contract v0.1.0)
+make db && make migrate          # local database up to migration 0010
+make check                       # lint, types, fast tests, contract
+TEST_DATABASE_URL=postgresql+psycopg://radial:radial_local_only@localhost:5432/radial_pulse_test make integration-test
+git add uv.lock openapi/openapi.json
+git commit -m "chore(contract): first contract v0.1.0 and uv.lock"
+
+# on GitHub: create an EMPTY private repo <org>/radial-pulse-backend (no README), then
+git remote add origin git@github.com:<org>/radial-pulse-backend.git
+git push -u origin main
+# when CI is green:
+git tag v0.1.0 && git push origin v0.1.0     # → release "API contract v0.1.0" for Person 2
+```
+
+Person 3's part (OIDC trust, IAM, settings): [docs/infrastructure/backend-repo-aws-changes.md](docs/infrastructure/backend-repo-aws-changes.md).
+
 ## First time on your machine
 
 ```bash
