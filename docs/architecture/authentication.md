@@ -27,10 +27,13 @@ sequenceDiagram
 ```
 
 - **PKCE** replaces a client secret. Both app clients in Cognito are _public_ (no secret).
-- Web: `react-oidc-context` / `oidc-client-ts` (`apps/web/src/features/auth`). Tokens in
-  `sessionStorage` (cleared when the tab closes).
-- Mobile: `expo-auth-session` (`apps/mobile/src/features/auth`). Tokens in the OS secure
-  store (Keychain / Keystore).
+- The apps may use any OIDC library. The frontend team uses **AWS Amplify** on web and mobile.
+  Whatever the library, the API only needs: the Cognito **access token** (not the ID token) as
+  `Authorization: Bearer …`, from one of our two app clients (web, mobile).
+- Cognito's own sign-in callback (`https://<web>/auth/callback`, `<app scheme>://auth/callback`)
+  is registered in Cognito by DevOps. The API never sees it. It is a different address from the
+  "Connect Your Accounts" callback (`…/connect/callback`), which the API does check
+  (`OAUTH_REDIRECT_URIS`). Never mix the two.
 
 ## Token flow on every API call
 
@@ -65,11 +68,13 @@ Radial Pulse is sold outbound: nobody signs themselves up.
 1. A **Platform Administrator** pre-creates Digital Success Managers (`POST /api/v1/users`)
    and assigns them to clinics.
 2. A **Digital Success Manager** onboards a clinic and adds its Clinic Administrator(s)
-   (`POST /clinics/{id}/team`). (Clinic Team Members come later.)
+   or Clinic Team Members (`POST /clinics/{id}/team`).
 3. On a person's **first** Google sign-in, the API sees an unknown `sub`, calls Cognito's
    `/oauth2/userInfo` for the **verified** email, and links it to the pre-created user.
-4. Unknown or unverified emails get **403 `not_provisioned`**. An email already linked to
-   a different Google identity is also refused.
+4. Unknown or unverified emails, and disabled accounts, get **403** with `type`
+   `not_provisioned` (the app shows "This account isn't set up for Radial Pulse"). An email
+   already linked to a different Google identity is also refused. A bad or expired token is
+   **401** `unauthorized`; an API without Cognito settings answers **503**.
 
 (Cognito itself may create a user record on first Google sign-in; that grants nothing
 in Radial Pulse. A Cognito pre-sign-up trigger to block unknown emails is listed in
@@ -85,7 +90,7 @@ only by the API from the database: see [multi-tenancy.md](multi-tenancy.md).
 | Platform Administrator  | `platform_administrator`                          | Everything, every clinic                      |
 | Digital Success Manager | `digital_success_manager` + assignment            | Assigned clinics only (+ onboard new clinics) |
 | Clinic Administrator    | `clinic_user` + membership `clinic_administrator` | Only their own clinic(s)                      |
-| Clinic Team Member      | `clinic_user` + membership `clinic_team_member`   | Reserved — no access yet                      |
+| Clinic Team Member      | `clinic_user` + membership `clinic_team_member`   | Own clinic(s), view-only + uploads            |
 
 ## Human identity vs service identity
 

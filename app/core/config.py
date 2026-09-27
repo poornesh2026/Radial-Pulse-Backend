@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     #: Verified SES sender, e.g. "Radial Pulse <no-reply@radialpulse.com>". Required for "ses".
     invite_from_email: str | None = None
     #: Where invited people sign in (the web app). Mobile users use the app itself.
-    app_sign_in_url: str = "http://localhost:5173/sign-in"
+    app_sign_in_url: str = "http://localhost:4200/sign-in"
 
     # ---------------------------------------------------------------- archiving
     #: S3 bucket for archived rows (old metric snapshots and audit events). Empty = local folder.
