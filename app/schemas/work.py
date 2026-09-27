@@ -69,6 +69,12 @@ class WorkItemRead(ApiModel):
     updated_at: datetime
 
 
+class WorkItemListItem(WorkItemRead):
+    """A row of the cross-clinic work queue (``GET /work-items``)."""
+
+    clinic_name: str
+
+
 class NotificationRead(ApiModel):
     id: UUID
     clinic_id: UUID | None

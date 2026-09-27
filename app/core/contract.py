@@ -15,4 +15,4 @@ the release fails if the tag and CONTRACT_VERSION differ.
 
 from __future__ import annotations
 
-CONTRACT_VERSION = "0.1.0"
+CONTRACT_VERSION = "0.1.1"

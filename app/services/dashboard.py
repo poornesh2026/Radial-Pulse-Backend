@@ -6,15 +6,13 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.core.enums import ClinicStage
+from app.core.enums import ClinicStage, ClinicStageGroup
 from app.core.errors import ForbiddenError
 from app.core.rbac import Principal
 from app.db.base import utcnow
 from app.repositories.dashboard import DashboardRepository
 from app.schemas.dashboard import DashboardSummary, MonthCount, StageCount
 
-PROSPECT_STAGES = (ClinicStage.PROSPECTIVE_CLIENT, ClinicStage.PROFILE_ENRICHED)
-IN_PROGRESS_STAGES = (ClinicStage.ASSESSMENT_COMPLETED, ClinicStage.CLIENT_DISCUSSION)
 MONTHS = 6
 
 
@@ -50,8 +48,8 @@ def summary(session: Session, principal: Principal) -> DashboardSummary:
             per_month[key] += 1
     return DashboardSummary(
         total_clinics=sum(by_stage.values()),
-        prospects=sum(by_stage.get(s, 0) for s in PROSPECT_STAGES),
-        in_progress=sum(by_stage.get(s, 0) for s in IN_PROGRESS_STAGES),
+        prospects=sum(by_stage.get(s, 0) for s in ClinicStageGroup.PROSPECTS.stages),
+        in_progress=sum(by_stage.get(s, 0) for s in ClinicStageGroup.IN_PROGRESS.stages),
         active=by_stage.get(ClinicStage.ACTIVE_CLIENT, 0),
         archived=archived,
         by_stage=[StageCount(stage=s, count=by_stage.get(s, 0)) for s in ClinicStage],

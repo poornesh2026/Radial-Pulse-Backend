@@ -23,14 +23,17 @@ from app.core.enums import (
     PublicationState,
 )
 from app.core.errors import ConflictError, NotFoundError
-from app.core.rbac import ClinicContext, Permission
+from app.core.rbac import ClinicContext, Permission, Principal
 from app.db.base import utcnow
 from app.jobs.queue import JobQueue
 from app.models import Assessment, AssessmentComponent, AssessmentFinding, PresenceProfile
 from app.repositories.assessments import AssessmentRepository
 from app.repositories.presence import PresenceRepository
+from app.repositories.tenancy import ClinicRepository
 from app.schemas.assessments import (
     AssessmentDetail,
+    AssessmentListItem,
+    AssessmentRead,
     AssessmentRequest,
     ComponentDetail,
     FindingRead,
@@ -92,6 +95,39 @@ def list_assessments(session: Session, ctx: ClinicContext, limit: int, offset: i
     return AssessmentRepository(session).list_for_clinic(
         ctx.clinic_id, published_only=_published_only(ctx), limit=limit, offset=offset
     )
+
+
+def list_across_clinics(
+    session: Session,
+    principal: Principal,
+    *,
+    status: AssessmentStatus | None,
+    publication_state: PublicationState | None,
+    clinic_id: UUID | None,
+    limit: int,
+    offset: int,
+) -> tuple[list[AssessmentListItem], int]:
+    """The Audit Reports list: assessments of every clinic the caller may see.
+
+    Same scope as ``GET /clinics`` (Admin: all · DSM: assigned · clinic people: their clinics,
+    PUBLISHED only). A ``clinic_id`` outside that scope simply matches nothing.
+    """
+    rows, total = AssessmentRepository(session).list_accessible(
+        principal.accessible_clinic_ids(), published_only=not principal.is_internal, status=status,
+        publication_state=publication_state, clinic_id=clinic_id, limit=limit, offset=offset,
+    )  # fmt: skip
+    names = ClinicRepository(session).primary_practitioner_names([a.clinic_id for a, _ in rows])
+    items = [
+        AssessmentListItem.model_validate(
+            {
+                **AssessmentRead.model_validate(assessment).model_dump(),
+                "clinic_name": clinic_name,
+                "primary_practitioner_name": names.get(assessment.clinic_id),
+            }
+        )
+        for assessment, clinic_name in rows
+    ]
+    return items, total
 
 
 def get_assessment(session: Session, ctx: ClinicContext, assessment_id: UUID) -> AssessmentDetail:

@@ -14,6 +14,7 @@ from app.core.enums import (
     AssetStatus,
     ClinicRole,
     ClinicStage,
+    ClinicStageGroup,
     NotificationCategory,
     PlatformRole,
 )
@@ -76,11 +77,18 @@ def list_clinics(
     offset: int,
     *,
     stages: Sequence[ClinicStage] | None = None,
+    group: ClinicStageGroup | None = None,
     dsm_user_id: UUID | None = None,
     unassigned: bool = False,
     search: str | None = None,
     archived: bool = False,
 ) -> tuple[list[ClinicListItem], int]:
+    if group is not None:
+        # An Admin tab = its stages; narrowed further when `stages` was given as well.
+        wanted = [s for s in group.stages if not stages or s in stages]
+        if not wanted:
+            return [], 0
+        stages = wanted
     repo = ClinicRepository(session)
     clinics, total = repo.list_accessible(
         principal.accessible_clinic_ids(), limit, offset,

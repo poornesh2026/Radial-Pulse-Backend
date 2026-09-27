@@ -21,7 +21,9 @@ make openapi            # writes openapi/openapi.json
 | Screen | Route(s) |
 |---|---|
 | Admin / DSM dashboard tiles + charts | `GET /dashboard/summary` |
-| Clinics list (Admin) / My Clinics (DSM) | `GET /clinics?stage=…&dsm_user_id=…&unassigned=…&q=…&archived=…` |
+| Clinics list (Admin) / My Clinics (DSM) | `GET /clinics?group=…&stage=…&dsm_user_id=…&unassigned=…&q=…&archived=…` |
+| Audit Reports (all clinics) | `GET /assessments?status=…&publication_state=…&clinic_id=…` (v0.1.1) |
+| DSM work queue (all clinics) | `GET /work-items?owner_user_id=…&status=…&area=…&clinic_id=…` (v0.1.1) |
 | Add Clinic | `POST /clinics` |
 | Clinic details header / edit | `GET /clinics/{id}`, `PATCH /clinics/{id}` |
 | Stepper | `POST /clinics/{id}/stage`, `GET /clinics/{id}/stage-history` |
@@ -38,15 +40,16 @@ make openapi            # writes openapi/openapi.json
 
 ## 2. Clinic stages
 
-5 steps. Use `CLINIC_STAGE_LABELS` / `CLINIC_STAGE_TABS` from `@radial-pulse/shared-types`.
+5 steps. The API tells you the tab: every clinic has `stage_group`, and `GET /clinics?group=…`
+filters by it (v0.1.1). Display labels are the frontend's (the values below are the contract).
 
-| Value | Label | Admin tab |
+| Value | Label | Admin tab (`stage_group`) |
 |---|---|---|
-| `prospective_client` | New lead | Prospects |
-| `profile_enriched` | Found online | Prospects |
-| `assessment_completed` | Report ready | In Progress |
-| `client_discussion` | In talks | In Progress |
-| `active_client` | Customer | Active |
+| `prospective_client` | New lead | `prospects` |
+| `profile_enriched` | Found online | `prospects` |
+| `assessment_completed` | Report ready | `in_progress` |
+| `client_discussion` | In talks | `in_progress` |
+| `active_client` | Customer | `active` |
 
 A clinic that says no is **archived** (`is_active: false`, `archived_reason`), it keeps its stage.
 
@@ -56,7 +59,8 @@ A clinic that says no is **archived** (`is_active: false`, `archived_reason`), i
 
 ### `GET /clinics` — list with filters
 
-Query: `stage` (repeat for several: `?stage=prospective_client&stage=profile_enriched`),
+Query: `group` (an Admin tab: `prospects`, `in_progress`, `active`), `stage` (repeat for several:
+`?stage=prospective_client&stage=profile_enriched`; with `group` too, only their overlap),
 `dsm_user_id`, `unassigned=true`, `q` (clinic name, practitioner name or website),
 `archived=true` (only archived; default shows only live clinics), `limit`, `offset`.
 
@@ -73,7 +77,8 @@ Each row = the clinic fields (below) **plus**:
 }
 ```
 
-`dsm` is `null` when nobody is assigned. Chip labels: `WORK_AREA_CHIP_LABELS` (SEO, GBP, Social, Profile…).
+`dsm` is `null` when nobody is assigned. Chip labels (SEO, GBP, Social, Profile…) are the frontend's;
+the `area` values are the contract.
 
 ### Clinic object (`GET /clinics/{id}`, and inside lists)
 
@@ -85,7 +90,7 @@ Each row = the clinic fields (below) **plus**:
   "address_line": "123 Health Street", "city": "Kakinada", "state": "Andhra Pradesh",
   "postal_code": "533001", "country": "IN",
   "latitude": 16.9891, "longitude": 82.2475, "cover_asset_id": null,
-  "stage": "client_discussion", "stage_changed_at": "2026-09-26T05:00:00Z",
+  "stage": "client_discussion", "stage_group": "in_progress", "stage_changed_at": "2026-09-26T05:00:00Z",
   "is_active": true, "archived_reason": null,
   "created_at": "…", "updated_at": "…"
 }
@@ -234,7 +239,7 @@ Unchanged routes. New rules: a Clinic Administrator **cannot** approve, reject o
 
 ---
 
-## 5. Every route (full list, 69 — contract v0.1.0)
+## 5. Every route (full list, 71 — contract v0.1.1)
 
 All paths are under `/api/v1`. `{id}` is the clinic id.
 For any `/clinics/{id}/…` route: **no access to the clinic → 404**, **access but missing
@@ -248,7 +253,7 @@ permission → 403**.
 | POST | `/clinics` | `clinics:create` | Add a clinic (a lead) |
 | GET | `/clinics/{id}` | `clinics:read` |  |
 | PATCH | `/clinics/{id}` | `clinics:write` | Edit clinic details |
-| GET | `/clinics/{id}/approvals` | `clinics:read` |  |
+| GET | `/clinics/{id}/approvals` | `clinics:read` | Each row carries `available_actions` for the caller |
 | POST | `/clinics/{id}/approvals/actions` | `clinics:read` + the action's own permission (e.g. `approvals:publish`) | submit / approve / reject / redo / publish / handoff |
 | GET | `/clinics/{id}/approvals/{approval_id}` | `clinics:read` |  |
 | POST | `/clinics/{id}/archive` | `clinics:manage` | Archive the clinic (e.g. it said no). A reason is required |
@@ -288,6 +293,8 @@ permission → 403**.
 | GET | `/clinics/{id}/work-items/{work_item_id}` | `work_items:read` |  |
 | PATCH | `/clinics/{id}/work-items/{work_item_id}` | `work_items:write` | Update status/owner (owner change = handoff) |
 | GET | `/dashboard/summary` | staff only (Admin, DSM) | Dashboard tiles and charts (Admin: all clinics; DSM: their clinics) |
+| GET | `/assessments` | signed in | Audit Reports across the caller's clinics (clinic users: PUBLISHED only) — v0.1.1 |
+| GET | `/work-items` | signed in | Work queue across the caller's clinics — v0.1.1 |
 | GET | `/notifications` | signed in | My in-app notifications |
 | POST | `/notifications/{notification_id}/read` | signed in |  |
 | GET | `/users` | `users:read` | Users screen (status + assigned clinic count) |
@@ -369,3 +376,22 @@ back with `code` and `state`, call `…/complete`. Other changes:
 - Asset kind `chat_attachment` (images and PDFs).
 - `GET /health` adds `contract_version`.
 - New error codes: **502** (a platform refused the Connect), **503** (that platform is not set up yet).
+
+---
+
+## 9. Contract v0.1.1 (27 Sep): answers to the frontend's questions
+
+Additions only. See `openapi/CHANGELOG.md` for the list. In short:
+
+- **`available_actions`** on every approval: the buttons to show *this* caller. Empty for a clinic
+  person on an assessment (D15), empty for a Clinic Team Member, no `publish` once published.
+- **`stage_group`** on every clinic and `GET /clinics?group=…`: the Admin tabs come from the API.
+- **`GET /assessments`** and **`GET /work-items`**: lists across every clinic the caller may see
+  (same rule as `GET /clinics`), with `clinic_name` on each row. Filter with `clinic_id`, `status`,
+  and (`assessments`) `publication_state` or (`work-items`) `owner_user_id`, `area`.
+- **Labels** (stage names, chip names, enum text) stay in the frontend. The enum values in the
+  contract are the source of truth; the API does not send display text.
+- **Metric keys** (`GET …/snapshots`): no catalogue yet. Keys are dotted and owned by the team that
+  produces them (`gbp.*`, `site.*`, `instagram.*`); the data-sync jobs that fill them are not built.
+  Today the contract guarantees only `source`, `metric_key`, `value`, `value_number`, `fetched_at`.
+- **Posts / reels**: not in V1. Connected accounts ask for read-only insights; nothing stores posts.

@@ -30,6 +30,9 @@ class ApprovalRead(ApiModel):
     decided_by_user_id: UUID | None
     assignee_user_id: UUID | None
     last_comment: str | None
+    #: What the CALLER may do to it right now (state, permissions and staff-only rules applied).
+    #: Show buttons from this list; never repeat the rules in the app.
+    available_actions: list[ApprovalAction]
     created_at: datetime
     updated_at: datetime
 

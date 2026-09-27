@@ -206,6 +206,33 @@ class ClinicStage(StrEnum):
     ACTIVE_CLIENT = "active_client"  # Customer (Client Activation)
 
 
+class ClinicStageGroup(StrEnum):
+    """The Admin tabs (decision D5): Prospects = stages 1-2, In Progress = 3-4, Active = 5.
+
+    The API applies this grouping itself (``GET /clinics?group=…``, ``stage_group`` on every
+    clinic, the dashboard tiles) so no screen has to repeat it.
+    """
+
+    PROSPECTS = "prospects"
+    IN_PROGRESS = "in_progress"
+    ACTIVE = "active"
+
+    @property
+    def stages(self) -> tuple[ClinicStage, ...]:
+        return STAGE_GROUPS[self]
+
+    @classmethod
+    def of(cls, stage: ClinicStage) -> ClinicStageGroup:
+        return next(group for group, stages in STAGE_GROUPS.items() if stage in stages)
+
+
+STAGE_GROUPS: dict[ClinicStageGroup, tuple[ClinicStage, ...]] = {
+    ClinicStageGroup.PROSPECTS: (ClinicStage.PROSPECTIVE_CLIENT, ClinicStage.PROFILE_ENRICHED),
+    ClinicStageGroup.IN_PROGRESS: (ClinicStage.ASSESSMENT_COMPLETED, ClinicStage.CLIENT_DISCUSSION),
+    ClinicStageGroup.ACTIVE: (ClinicStage.ACTIVE_CLIENT,),
+}
+
+
 class WorkArea(StrEnum):
     """Which part of the clinic's digital presence a work item improves ("SEO 3 · GBP 2" chips).
 

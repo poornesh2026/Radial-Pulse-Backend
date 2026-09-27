@@ -49,4 +49,7 @@ for module in (
     settings,
 ):
     api_router.include_router(module.router)
+# Lists across clinics (no clinic in the path; scoped to the caller's clinics like GET /clinics).
 api_router.include_router(chat.inbox_router)
+api_router.include_router(assessments.list_router)
+api_router.include_router(work_items.list_router)

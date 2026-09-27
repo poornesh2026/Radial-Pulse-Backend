@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
 
 from app.core.enums import AssessmentComponentKey, AssessmentStatus, PublicationState
-from app.models import Assessment, AssessmentComponent, AssessmentFinding
+from app.models import Assessment, AssessmentComponent, AssessmentFinding, Clinic
 from app.repositories.base import Repository
 
 
@@ -37,6 +38,41 @@ class AssessmentRepository(Repository):
         if published_only:
             stmt = stmt.where(Assessment.publication_state == PublicationState.PUBLISHED)
         return self.paginate(stmt.order_by(Assessment.sequence.desc()), limit, offset)
+
+    def list_accessible(
+        self,
+        clinic_ids: Iterable[UUID] | None,
+        *,
+        published_only: bool,
+        status: AssessmentStatus | None,
+        publication_state: PublicationState | None,
+        clinic_id: UUID | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[tuple[Assessment, str]], int]:
+        """Assessments across clinics, each with its clinic's name, newest first.
+
+        ``clinic_ids=None`` means all clinics (Platform Administrator). An empty set returns nothing.
+        """
+        base = select(Assessment, Clinic.name).join(Clinic, Clinic.id == Assessment.clinic_id)
+        if clinic_ids is not None:
+            ids = list(clinic_ids)
+            if not ids:
+                return [], 0
+            base = base.where(Assessment.clinic_id.in_(ids))
+        if clinic_id is not None:
+            base = base.where(Assessment.clinic_id == clinic_id)
+        if published_only:
+            base = base.where(Assessment.publication_state == PublicationState.PUBLISHED)
+        if status is not None:
+            base = base.where(Assessment.status == status)
+        if publication_state is not None:
+            base = base.where(Assessment.publication_state == publication_state)
+        total = self.session.scalar(select(func.count()).select_from(base.subquery())) or 0
+        rows = self.session.execute(
+            base.order_by(Assessment.created_at.desc(), Assessment.id).limit(limit).offset(offset)
+        )
+        return [(assessment, name) for assessment, name in rows], int(total)
 
     def components(self, clinic_id: UUID, assessment_id: UUID) -> list[AssessmentComponent]:
         return list(

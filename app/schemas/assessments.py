@@ -75,6 +75,13 @@ class AssessmentDetail(AssessmentRead):
     components: list[ComponentDetail]
 
 
+class AssessmentListItem(AssessmentRead):
+    """A row of the cross-clinic Audit Reports list (``GET /assessments``)."""
+
+    clinic_name: str
+    primary_practitioner_name: str | None
+
+
 class AssessmentRequest(ApiModel):
     """Start a new Digital Presence Assessment. Work runs in the background worker."""
 

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.routers._common import ERRORS, ErrorResponses, Limit, Offset
 from app.core.config import Settings
-from app.core.enums import ClinicStage
+from app.core.enums import ClinicStage, ClinicStageGroup
 from app.core.errors import ProblemDetails
 from app.core.rbac import ClinicContext, Permission, Principal
 from app.dependencies.adapters import get_invite_sender, settings_dependency
@@ -43,8 +43,9 @@ STATE_ERROR: ErrorResponses = {
     summary="Clinics the caller may see, with filters (the Clinics / My Client Portfolio table)",
 )
 def list_clinics(
-    stage: list[ClinicStage] | None = Query(
-        default=None, description="One or more stages. Prospects tab = prospective_client + profile_enriched"
+    stage: list[ClinicStage] | None = Query(default=None, description="One or more stages"),
+    group: ClinicStageGroup | None = Query(
+        default=None, description="An Admin tab: prospects (stages 1-2), in_progress (3-4) or active (5)"
     ),
     dsm_user_id: UUID | None = Query(default=None, description="Only clinics of this DSM"),
     unassigned: bool = Query(default=False, description="Only clinics without a DSM"),
@@ -57,7 +58,8 @@ def list_clinics(
 ) -> Page[ClinicListItem]:
     items, total = service.list_clinics(
         db, principal, limit, offset,
-        stages=stage, dsm_user_id=dsm_user_id, unassigned=unassigned, search=q, archived=archived,
+        stages=stage, group=group, dsm_user_id=dsm_user_id, unassigned=unassigned,
+        search=q, archived=archived,
     )  # fmt: skip
     return Page[ClinicListItem](items=items, total=total, limit=limit, offset=offset)
 

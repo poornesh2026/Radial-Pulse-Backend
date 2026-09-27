@@ -10,8 +10,8 @@ import uuid
 
 import pytest
 
-from app.core.enums import AssetKind, AssetStatus, DataSource, SnapshotStatus
-from app.models import Asset, ClinicMembership, MetricSnapshot, ReportArtifact, WorkItem
+from app.core.enums import AssessmentStatus, AssetKind, AssetStatus, DataSource, SnapshotStatus
+from app.models import Assessment, Asset, ClinicMembership, MetricSnapshot, ReportArtifact, WorkItem
 
 CLINIC_SCOPED_GETS = [
     "/api/v1/clinics/{cid}",
@@ -67,6 +67,55 @@ def test_clinic_list_only_contains_accessible_clinics(client, world, auth) -> No
     assert names(world.dsm_a) == {"Smile Dental A"}
     assert names(world.unassigned_dsm) == set()
     assert names(world.admin) == {"Smile Dental A", "Bright Clinic B"}
+
+
+def test_cross_clinic_lists_only_contain_accessible_clinics(client, db, world, auth) -> None:  # type: ignore[no-untyped-def]
+    """GET /assessments and GET /work-items (no clinic in the path) follow the same scope as GET /clinics."""
+    a, b = world.clinic_a.id, world.clinic_b.id
+    published = Assessment(
+        clinic_id=a, sequence=1, status=AssessmentStatus.COMPLETED, methodology_version="t"
+    )
+    db.add_all(
+        [
+            published,
+            Assessment(clinic_id=a, sequence=2, status=AssessmentStatus.COMPLETED, methodology_version="t"),
+            Assessment(clinic_id=b, sequence=1, status=AssessmentStatus.COMPLETED, methodology_version="t"),
+            WorkItem(clinic_id=a, kind="k", title="A task"),
+            WorkItem(clinic_id=b, kind="k", title="B task"),
+        ]
+    )
+    db.commit()
+    # Publish A's first assessment the proper way (submit → approve → publish by the DSM).
+    for action in ("submit", "approve", "publish"):
+        r = client.post(
+            f"/api/v1/clinics/{a}/approvals/actions",
+            headers=auth(world.dsm_a),
+            json={"resource_type": "assessment", "resource_id": str(published.id), "action": action},
+        )
+        assert r.status_code == 200, r.text
+
+    def clinics(user, path, **params):  # type: ignore[no-untyped-def]
+        r = client.get(path, headers=auth(user), params=params)
+        assert r.status_code == 200, r.text
+        return sorted(row["clinic_name"] for row in r.json()["items"])
+
+    assessments, work = "/api/v1/assessments", "/api/v1/work-items"
+    assert clinics(world.admin, assessments) == ["Bright Clinic B", "Smile Dental A", "Smile Dental A"]
+    assert clinics(world.dsm_a, assessments) == ["Smile Dental A", "Smile Dental A"]
+    assert clinics(world.clinic_admin_a, assessments) == ["Smile Dental A"]  # PUBLISHED only
+    assert clinics(world.clinic_admin_b, assessments) == []  # B's assessment is not published
+    assert clinics(world.unassigned_dsm, assessments) == []
+    assert clinics(world.admin, work) == ["Bright Clinic B", "Smile Dental A"]
+    assert clinics(world.dsm_a, work) == ["Smile Dental A"]
+    assert clinics(world.team_member_a, work) == ["Smile Dental A"]
+    assert clinics(world.clinic_admin_b, work) == ["Bright Clinic B"]
+    assert clinics(world.unassigned_dsm, work) == []
+    # Asking for a clinic you cannot see matches nothing (and reveals nothing).
+    assert clinics(world.dsm_a, assessments, clinic_id=str(b)) == []
+    assert clinics(world.dsm_a, work, clinic_id=str(b)) == []
+    assert clinics(world.admin, assessments, publication_state="published") == ["Smile Dental A"]
+    row = client.get(assessments, headers=auth(world.clinic_admin_a)).json()["items"][0]
+    assert row["clinic_id"] == str(a) and row["primary_practitioner_name"] == "Dr. A"
 
 
 def test_practitioner_of_b_cannot_be_reached_through_clinic_a_path(client, world, auth) -> None:  # type: ignore[no-untyped-def]

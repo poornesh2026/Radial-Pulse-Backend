@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import Field, HttpUrl, model_validator
 
-from app.core.enums import ClinicRole, ClinicStage, WorkArea
+from app.core.enums import ClinicRole, ClinicStage, ClinicStageGroup, WorkArea
 from app.schemas.common import ApiModel, Email, PatchModel, ShortText
 
 
@@ -77,6 +77,8 @@ class ClinicRead(ApiModel):
     longitude: float | None
     cover_asset_id: UUID | None
     stage: ClinicStage
+    #: The Admin tab this stage belongs to (prospects / in_progress / active).
+    stage_group: ClinicStageGroup
     stage_changed_at: datetime
     is_active: bool
     archived_reason: str | None

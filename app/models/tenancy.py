@@ -28,7 +28,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.enums import ClinicRole, ClinicStage
+from app.core.enums import ClinicRole, ClinicStage, ClinicStageGroup
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, str_enum, trigram_index, utcnow
 
 Coordinate = Numeric(9, 6)
@@ -89,6 +89,11 @@ class Clinic(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     organization: Mapped[Organization] = relationship(lazy="joined")
+
+    @property
+    def stage_group(self) -> ClinicStageGroup:
+        """Which Admin tab the clinic is on (Prospects / In Progress / Active)."""
+        return ClinicStageGroup.of(self.stage)
 
 
 class Practitioner(UUIDPrimaryKeyMixin, TimestampMixin, Base):

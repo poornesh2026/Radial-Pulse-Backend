@@ -78,6 +78,13 @@
             ],
             "title": "Assignee User Id"
           },
+          "available_actions": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalAction"
+            },
+            "title": "Available Actions",
+            "type": "array"
+          },
           "clinic_id": {
             "format": "uuid",
             "title": "Clinic Id",
@@ -160,6 +167,7 @@
           "decided_by_user_id",
           "assignee_user_id",
           "last_comment",
+          "available_actions",
           "created_at",
           "updated_at"
         ],
@@ -356,6 +364,149 @@
           "components"
         ],
         "title": "AssessmentDetail",
+        "type": "object"
+      },
+      "AssessmentListItem": {
+        "additionalProperties": false,
+        "description": "A row of the cross-clinic Audit Reports list (``GET /assessments``).",
+        "properties": {
+          "approval_state": {
+            "$ref": "#/components/schemas/ApprovalState"
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "title": "Clinic Id",
+            "type": "string"
+          },
+          "clinic_name": {
+            "title": "Clinic Name",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "methodology_version": {
+            "title": "Methodology Version",
+            "type": "string"
+          },
+          "overall_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Score"
+          },
+          "primary_practitioner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Practitioner Name"
+          },
+          "publication_state": {
+            "$ref": "#/components/schemas/PublicationState"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "requested_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By User Id"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AssessmentStatus"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          }
+        },
+        "required": [
+          "id",
+          "clinic_id",
+          "sequence",
+          "status",
+          "methodology_version",
+          "overall_score",
+          "summary",
+          "requested_by_user_id",
+          "started_at",
+          "completed_at",
+          "approval_state",
+          "publication_state",
+          "published_at",
+          "created_at",
+          "clinic_name",
+          "primary_practitioner_name"
+        ],
+        "title": "AssessmentListItem",
         "type": "object"
       },
       "AssessmentRead": {
@@ -1746,6 +1897,9 @@
             "title": "Stage Changed At",
             "type": "string"
           },
+          "stage_group": {
+            "$ref": "#/components/schemas/ClinicStageGroup"
+          },
           "state": {
             "anyOf": [
               {
@@ -1792,6 +1946,7 @@
           "longitude",
           "cover_asset_id",
           "stage",
+          "stage_group",
           "stage_changed_at",
           "is_active",
           "archived_reason",
@@ -2094,6 +2249,9 @@
             "title": "Stage Changed At",
             "type": "string"
           },
+          "stage_group": {
+            "$ref": "#/components/schemas/ClinicStageGroup"
+          },
           "state": {
             "anyOf": [
               {
@@ -2140,6 +2298,7 @@
           "longitude",
           "cover_asset_id",
           "stage",
+          "stage_group",
           "stage_changed_at",
           "is_active",
           "archived_reason",
@@ -2168,6 +2327,16 @@
           "active_client"
         ],
         "title": "ClinicStage",
+        "type": "string"
+      },
+      "ClinicStageGroup": {
+        "description": "The Admin tabs (decision D5): Prospects = stages 1-2, In Progress = 3-4, Active = 5.\n\nThe API applies this grouping itself (``GET /clinics?group=\u2026``, ``stage_group`` on every\nclinic, the dashboard tiles) so no screen has to repeat it.",
+        "enum": [
+          "prospects",
+          "in_progress",
+          "active"
+        ],
+        "title": "ClinicStageGroup",
         "type": "string"
       },
       "ClinicUpdate": {
@@ -3535,6 +3704,38 @@
         "title": "Page[ApprovalRead]",
         "type": "object"
       },
+      "Page_AssessmentListItem_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[AssessmentListItem]",
+        "type": "object"
+      },
       "Page_AssessmentRead_": {
         "additionalProperties": false,
         "properties": {
@@ -3853,6 +4054,38 @@
           "offset"
         ],
         "title": "Page[UserListItem]",
+        "type": "object"
+      },
+      "Page_WorkItemListItem_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkItemListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[WorkItemListItem]",
         "type": "object"
       },
       "Page_WorkItemRead_": {
@@ -5647,6 +5880,181 @@
         "title": "WorkItemCreate",
         "type": "object"
       },
+      "WorkItemListItem": {
+        "additionalProperties": false,
+        "description": "A row of the cross-clinic work queue (``GET /work-items``).",
+        "properties": {
+          "approval_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
+          "area": {
+            "$ref": "#/components/schemas/WorkArea"
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "title": "Clinic Id",
+            "type": "string"
+          },
+          "clinic_name": {
+            "title": "Clinic Name",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "finding_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finding Code"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/WorkItemPriority"
+          },
+          "source_finding_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Finding Id"
+          },
+          "source_team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Team"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkItemStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "clinic_id",
+          "kind",
+          "title",
+          "description",
+          "area",
+          "finding_code",
+          "source_finding_id",
+          "status",
+          "priority",
+          "owner_user_id",
+          "created_by_user_id",
+          "due_at",
+          "completed_at",
+          "approval_id",
+          "source_team",
+          "created_at",
+          "updated_at",
+          "clinic_name"
+        ],
+        "title": "WorkItemListItem",
+        "type": "object"
+      },
       "WorkItemPriority": {
         "enum": [
           "low",
@@ -5936,10 +6344,156 @@
   "info": {
     "description": "Platform API for Radial Pulse (clinics & practitioners). Every clinic-scoped route is authorized server-side; see docs/architecture/multi-tenancy.md.",
     "title": "Radial Pulse API",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/assessments": {
+      "get": {
+        "operationId": "list_all_assessments_api_v1_assessments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssessmentStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "publication_state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PublicationState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Publication State"
+            }
+          },
+          {
+            "description": "Only this clinic",
+            "in": "query",
+            "name": "clinic_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this clinic",
+              "title": "Clinic Id"
+            }
+          },
+          {
+            "description": "Page size",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items to skip",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Items to skip",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AssessmentListItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authenticated but not allowed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not found, or no access to this clinic"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Audit Reports: assessments of every clinic the caller may see (clinic users: PUBLISHED only)",
+        "tags": [
+          "assessments"
+        ]
+      }
+    },
     "/api/v1/auth/me": {
       "get": {
         "description": "Sign-in happens in Cognito (Hosted UI, Google, PKCE). This returns the platform view of the caller.",
@@ -6524,7 +7078,7 @@
         "operationId": "list_clinics_api_v1_clinics_get",
         "parameters": [
           {
-            "description": "One or more stages. Prospects tab = prospective_client + profile_enriched",
+            "description": "One or more stages",
             "in": "query",
             "name": "stage",
             "required": false,
@@ -6540,8 +7094,26 @@
                   "type": "null"
                 }
               ],
-              "description": "One or more stages. Prospects tab = prospective_client + profile_enriched",
+              "description": "One or more stages",
               "title": "Stage"
+            }
+          },
+          {
+            "description": "An Admin tab: prospects (stages 1-2), in_progress (3-4) or active (5)",
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ClinicStageGroup"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "An Admin tab: prospects (stages 1-2), in_progress (3-4) or active (5)",
+              "title": "Group"
             }
           },
           {
@@ -12444,6 +13016,171 @@
         "summary": "Resend Invite",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/v1/work-items": {
+      "get": {
+        "operationId": "list_all_work_items_api_v1_work_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/WorkItemStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "description": "Only items owned by this person",
+            "in": "query",
+            "name": "owner_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only items owned by this person",
+              "title": "Owner User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "area",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/WorkArea"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Area"
+            }
+          },
+          {
+            "description": "Only this clinic",
+            "in": "query",
+            "name": "clinic_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this clinic",
+              "title": "Clinic Id"
+            }
+          },
+          {
+            "description": "Page size",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Page size",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items to skip",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Items to skip",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_WorkItemListItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authenticated but not allowed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not found, or no access to this clinic"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Work queue: work items of every clinic the caller may see",
+        "tags": [
+          "work-items"
         ]
       }
     },

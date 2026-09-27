@@ -17,7 +17,7 @@ from app.repositories.assessments import AssessmentRepository
 from app.repositories.governance import ApprovalRepository
 from app.repositories.users import UserRepository
 from app.repositories.work import NotificationRepository, WorkItemRepository
-from app.schemas.work import WorkItemCreate, WorkItemUpdate
+from app.schemas.work import WorkItemCreate, WorkItemListItem, WorkItemRead, WorkItemUpdate
 from app.services import audit, notify
 from app.services.identity import build_principal
 
@@ -145,6 +145,31 @@ def list_work_items(
     return WorkItemRepository(session).list_for_clinic(
         ctx.clinic_id, status=status, owner_user_id=owner_user_id, area=area, limit=limit, offset=offset
     )
+
+
+def list_across_clinics(
+    session: Session,
+    principal: Principal,
+    *,
+    status: WorkItemStatus | None,
+    owner_user_id: UUID | None,
+    area: WorkArea | None,
+    clinic_id: UUID | None,
+    limit: int,
+    offset: int,
+) -> tuple[list[WorkItemListItem], int]:
+    """The work queue: work items of every clinic the caller may see (same scope as ``GET /clinics``)."""
+    rows, total = WorkItemRepository(session).list_accessible(
+        principal.accessible_clinic_ids(), status=status, owner_user_id=owner_user_id, area=area,
+        clinic_id=clinic_id, limit=limit, offset=offset,
+    )  # fmt: skip
+    items = [
+        WorkItemListItem.model_validate(
+            {**WorkItemRead.model_validate(item).model_dump(), "clinic_name": clinic_name}
+        )
+        for item, clinic_name in rows
+    ]
+    return items, total
 
 
 def list_notifications(

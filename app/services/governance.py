@@ -35,7 +35,7 @@ from app.repositories.assets import AssetRepository
 from app.repositories.governance import ApprovalRepository, AuditEventRepository
 from app.repositories.reporting import ReportRepository
 from app.repositories.users import UserRepository
-from app.schemas.governance import ApprovalActionRequest
+from app.schemas.governance import ApprovalActionRequest, ApprovalRead
 from app.services import audit, notify
 from app.services.identity import build_principal
 
@@ -231,6 +231,33 @@ def _handoff(session: Session, ctx: ClinicContext, approval: Approval, assignee_
         title="An item was handed to you for review",
         link=f"/clinics/{ctx.clinic_id}/approvals/{approval.id}",
     )
+
+
+def available_actions(ctx: ClinicContext, approval: Approval) -> list[ApprovalAction]:
+    """The actions THIS caller may take on the approval right now — the buttons to show.
+
+    The same rules as ``apply_action`` (state machine, permission, staff-only resources,
+    already published), so a screen never has to repeat them.
+    """
+    handler = RESOURCE_HANDLERS.get(approval.resource_type)
+    if handler is None or (handler.staff_only and not ctx.principal.is_internal):
+        return []
+    actions = []
+    for action, (allowed_from, _target) in TRANSITIONS.items():
+        if approval.state not in allowed_from or not ctx.can(REQUIRED_PERMISSION[action]):
+            continue
+        if action is ApprovalAction.PUBLISH and approval.publication_state is PublicationState.PUBLISHED:
+            continue
+        actions.append(action)
+    return actions
+
+
+def to_read(ctx: ClinicContext, approval: Approval) -> ApprovalRead:
+    """The API shape of an approval, with what the caller may do next."""
+    fields = {
+        name: getattr(approval, name) for name in ApprovalRead.model_fields if name != "available_actions"
+    }
+    return ApprovalRead.model_validate({**fields, "available_actions": available_actions(ctx, approval)})
 
 
 def list_approvals(

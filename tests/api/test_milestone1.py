@@ -139,7 +139,12 @@ def test_clinic_list_filters(client, db, world, auth) -> None:  # type: ignore[n
     both = {world.clinic_a.name, world.clinic_b.name}
     assert names() == both
     assert names(stage=["prospective_client", "profile_enriched"]) == both  # the "Prospects" tab
+    assert names(group="prospects") == both  # the same tab, without repeating the mapping
+    assert names(group="in_progress") == set() and names(group="active") == set()
+    assert names(group="prospects", stage="active_client") == set()  # both given: their overlap
     assert names(stage="active_client") == set()
+    rows = client.get("/api/v1/clinics", headers=h).json()["items"]
+    assert {r["stage_group"] for r in rows} == {"prospects"}
     assert names(dsm_user_id=str(world.dsm_a.id)) == {world.clinic_a.name}
     assert names(unassigned=True) == {world.clinic_b.name}
     assert names(q="dr. b") == {world.clinic_b.name}  # practitioner name

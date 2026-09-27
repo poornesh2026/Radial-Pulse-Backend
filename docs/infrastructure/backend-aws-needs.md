@@ -18,6 +18,7 @@ Later, the data-sync jobs (worker) will only need to **read** those secrets.
 | `OAUTH_REDIRECT_URIS` | the frontend addresses the platforms may send the clinic back to (comma-separated) |
 | `CONNECTION_SECRETS_KMS_KEY_ID` | the KMS key for the connected-account secrets |
 | `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET`, `META_APP_ID` / `_SECRET`, `LINKEDIN_CLIENT_ID` / `_SECRET`, `X_CLIENT_ID` / `_SECRET` | each platform's app credentials (the `_SECRET` ones are secrets) |
+| `CORS_ALLOWED_ORIGINS` | browser addresses allowed to call the API (comma-separated). **DEV:** the deployed web app **plus the developers' local servers** `http://localhost:4200` (web) and `http://localhost:8081` (mobile). **PROD:** https addresses only (the API refuses to start otherwise) |
 
 A platform without its credentials shows "not set up yet" in the app; nothing breaks.
 

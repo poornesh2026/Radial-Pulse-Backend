@@ -4,6 +4,23 @@ What changed **for the screens** in each contract version. The full contract is
 `openapi/openapi.json` (also attached to each GitHub Release). Version rules:
 [docs/api/contract-versioning.md](../docs/api/contract-versioning.md).
 
+## v0.1.1 — 2026-09-27
+
+Additions only (nothing removed or renamed). Asked for by the frontend team.
+
+- **Approvals:** every approval now carries `available_actions`: the actions the **caller** may take
+  right now (state, permissions, staff-only assessments and "already published" all applied).
+  Show buttons from it; do not repeat the rules in the app.
+- **Clinic stage groups:** `GET /clinics?group=prospects|in_progress|active` filters by Admin tab
+  (D5: Prospects = stages 1-2, In Progress = 3-4, Active = 5), and every clinic has `stage_group`.
+  The tile counts are unchanged in `GET /dashboard/summary`.
+- **`GET /assessments`** (new): the Audit Reports list across every clinic the caller may see, each
+  row with `clinic_name` and `primary_practitioner_name`. Filters: `status`, `publication_state`,
+  `clinic_id`. Same scope as `GET /clinics`; clinic users see PUBLISHED assessments only.
+- **`GET /work-items`** (new): the work queue across clinics, each row with `clinic_name`.
+  Filters: `status`, `owner_user_id`, `area`, `clinic_id`. Same scope as `GET /clinics`.
+- Local CORS defaults now include `http://localhost:4200`.
+
 ## v0.1.0 — 2026-09-27
 
 First versioned contract. Base path `/api/v1`, Bearer token from Cognito, errors are

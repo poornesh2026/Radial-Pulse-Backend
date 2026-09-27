@@ -30,7 +30,7 @@ def apply_action(
     db: Session = Depends(get_db),
 ) -> ApprovalRead:
     """The per-action permission (e.g. approvals:decide) is checked by the service."""
-    return ApprovalRead.model_validate(service.apply_action(db, ctx, body))
+    return service.to_read(ctx, service.apply_action(db, ctx, body))
 
 
 @router.get("", response_model=Page[ApprovalRead])
@@ -42,7 +42,8 @@ def list_approvals(
     db: Session = Depends(get_db),
 ) -> Page[ApprovalRead]:
     items, total = service.list_approvals(db, ctx, state, limit, offset)
-    return Page[ApprovalRead](items=items, total=total, limit=limit, offset=offset)
+    rows = [service.to_read(ctx, approval) for approval in items]
+    return Page[ApprovalRead](items=rows, total=total, limit=limit, offset=offset)
 
 
 @router.get("/{approval_id}", response_model=ApprovalRead)
@@ -51,4 +52,4 @@ def get_approval(
     ctx: ClinicContext = Depends(clinic_access(Permission.CLINICS_READ)),
     db: Session = Depends(get_db),
 ) -> ApprovalRead:
-    return ApprovalRead.model_validate(service.get_approval(db, ctx, approval_id))
+    return service.to_read(ctx, service.get_approval(db, ctx, approval_id))

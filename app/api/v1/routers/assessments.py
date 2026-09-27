@@ -8,22 +8,47 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.routers._common import ERRORS, Limit, Offset
 from app.core.config import Settings
+from app.core.enums import AssessmentStatus, PublicationState
 from app.core.errors import ProblemDetails
-from app.core.rbac import ClinicContext, Permission
+from app.core.rbac import ClinicContext, Permission, Principal
 from app.dependencies.adapters import get_job_queue, settings_dependency
+from app.dependencies.auth import get_principal
 from app.dependencies.db import get_db
 from app.dependencies.tenancy import clinic_access
 from app.jobs.queue import JobQueue
-from app.schemas.assessments import AssessmentDetail, AssessmentRead, AssessmentRequest
+from app.schemas.assessments import AssessmentDetail, AssessmentListItem, AssessmentRead, AssessmentRequest
 from app.schemas.common import Page
 from app.services import assessments as service
 
 router = APIRouter(prefix="/clinics/{clinic_id}/assessments", tags=["assessments"], responses=ERRORS)
+#: Across clinics (no clinic in the path): the Audit Reports list.
+list_router = APIRouter(prefix="/assessments", tags=["assessments"], responses=ERRORS)
+
+
+@list_router.get(
+    "",
+    response_model=Page[AssessmentListItem],
+    summary="Audit Reports: assessments of every clinic the caller may see (clinic users: PUBLISHED only)",
+)
+def list_all_assessments(
+    status_filter: AssessmentStatus | None = Query(default=None, alias="status"),
+    publication_state: PublicationState | None = Query(default=None),
+    clinic_id: UUID | None = Query(default=None, description="Only this clinic"),
+    limit: Limit = 50,
+    offset: Offset = 0,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+) -> Page[AssessmentListItem]:
+    items, total = service.list_across_clinics(
+        db, principal, status=status_filter, publication_state=publication_state, clinic_id=clinic_id,
+        limit=limit, offset=offset,
+    )  # fmt: skip
+    return Page[AssessmentListItem](items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post(

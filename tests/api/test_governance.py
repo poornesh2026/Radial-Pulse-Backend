@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from app.models import AuditEvent, Notification
+from app.core.enums import AssessmentStatus
+from app.models import Assessment, AuditEvent, Notification
 
 
 def _report(client, world, auth) -> str:  # type: ignore[no-untyped-def]
@@ -90,6 +91,40 @@ def test_handoff_notifies_assignee_with_access_only(client, db, world, auth) -> 
         client.post(f"/api/v1/notifications/{note_id}/read", headers=auth(world.clinic_admin_a)).status_code
         == 200
     )
+
+
+def test_available_actions_follow_state_and_permissions(client, db, world, auth) -> None:  # type: ignore[no-untyped-def]
+    """The API says which buttons to show; screens never repeat the state machine."""
+    report_id = _report(client, world, auth)
+    approvals = f"/api/v1/clinics/{world.clinic_a.id}/approvals"
+
+    def listed(user):  # type: ignore[no-untyped-def]
+        rows = client.get(approvals, headers=auth(user)).json()["items"]
+        return {row["resource_type"]: sorted(row["available_actions"]) for row in rows}
+
+    r = _act(client, world, world.dsm_a, auth, report_id, "submit")
+    assert sorted(r.json()["available_actions"]) == ["approve", "handoff", "redo", "reject"]
+    assert listed(world.clinic_admin_a)["report_artifact"] == ["approve", "redo", "reject"]  # may decide
+    assert listed(world.team_member_a)["report_artifact"] == []  # view only
+    r = _act(client, world, world.dsm_a, auth, report_id, "approve")
+    assert sorted(r.json()["available_actions"]) == ["handoff", "publish", "redo"]
+    r = _act(client, world, world.dsm_a, auth, report_id, "publish")
+    assert sorted(r.json()["available_actions"]) == ["handoff", "redo"]  # already published
+
+    # An assessment is reviewed by Radial Pulse staff only (decision D15): nothing for clinic people.
+    assessment = Assessment(
+        clinic_id=world.clinic_a.id, sequence=1, status=AssessmentStatus.COMPLETED, methodology_version="t"
+    )
+    db.add(assessment)
+    db.commit()
+    r = client.post(
+        f"{approvals}/actions",
+        headers=auth(world.dsm_a),
+        json={"resource_type": "assessment", "resource_id": str(assessment.id), "action": "submit"},
+    )
+    assert r.status_code == 200, r.text
+    assert sorted(r.json()["available_actions"]) == ["approve", "handoff", "redo", "reject"]
+    assert listed(world.clinic_admin_a)["assessment"] == []
 
 
 def test_unregistered_resource_types_are_rejected(client, world, auth) -> None:  # type: ignore[no-untyped-def]
