@@ -30,7 +30,7 @@ jobs:
         run: |
           VERSION=$(grep -Eo 'CONTRACT_VERSION = "[^"]+"' app/core/contract.py | cut -d'"' -f2)
           [ "v$VERSION" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME but CONTRACT_VERSION is $VERSION"; exit 1; }
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.12'
       - name: The committed openapi.json is exactly what the code produces
